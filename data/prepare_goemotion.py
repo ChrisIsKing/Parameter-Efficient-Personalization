@@ -3,14 +3,14 @@ import json
 import nltk
 from nltk.metrics.distance import masi_distance
 
-label_map = json.load(open('data/goemotion/ekman_mapping.json'))
+label_map = json.load(open('goemotion/ekman_mapping.json'))
 label_map = flip_dict_of_lists(label_map)
 label_map['neutral'] = 'neutral'
 
 csv_files = [
-    'data/goemotion/goemotions_1.csv',
-    'data/goemotion/goemotions_2.csv',
-    'data/goemotion/goemotions_3.csv',
+    'goemotion/goemotions_1.csv',
+    'goemotion/goemotions_2.csv',
+    'goemotion/goemotions_3.csv',
 ]
 
 user_data = {}
@@ -46,8 +46,8 @@ print("Average number of examples per user: {}".format(num_examples/num_annotato
 print("Average number of users per example: {}".format(avg_num_users_per_example(user_data)))
 
 # Save the data
-with open('data/goemotion/user_data_leaked.json', 'w') as f:
+with open('goemotion/user_data_leaked.json', 'w') as f:
     json.dump(user_data_leaked, f)
 
-with open('data/goemotion/user_data_no_leak.json', 'w') as f:
+with open('goemotion/user_data_no_leak.json', 'w') as f:
     json.dump(user_data_no_leak, f)

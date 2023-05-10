@@ -1,24 +1,30 @@
 from utils import *
-import datasets
 import json
 import nltk
 from nltk.metrics.distance import masi_distance
-dataset = datasets.load_dataset('ucberkeley-dlab/measuring-hate-speech')
-df = dataset['train'].to_pandas()
 
+annotation_data, annotation_headers = load_csv('studemo/annotation_data.csv', delimiter=",", header=True)
+text_data, text_headers = load_csv('studemo/text_data.csv', delimiter=",", header=True)
+
+# Build id to text map
+id_to_text = {}
+for i, row in enumerate(text_data):
+    post_id = row[0]
+    text = row[1]
+    id_to_text[post_id] = text
+
+# Build user data
 user_data = {}
 
-for i in range(len(df)):
-    post_id = str(df['comment_id'][i])
-    user_id = str(df['annotator_id'][i])
-    text = df['text'][i]
-    label = str(int(df['hatespeech'][i]))
-
+for i, row in enumerate(annotation_data):
+    post_id = row[0]
+    user_id = row[1]
+    label = row[2]
     if user_id not in user_data:
         user_data[user_id] = {}
+    if post_id not in user_data[user_id]:
+        user_data[user_id][post_id] = {"text": id_to_text[post_id], "label": label}
     
-    user_data[user_id][post_id] = {'text': text, 'label': label}
-
 num_annotators = len(user_data)
 num_examples = sum([len(v) for k, v in user_data.items()])
 
@@ -34,8 +40,8 @@ print("Average number of examples per user: {}".format(num_examples/num_annotato
 print("Average number of users per example: {}".format(avg_num_users_per_example(user_data)))
 
 # Save the data
-with open('data/measuringhatespeech/user_data_leaked.json', 'w') as f:
+with open('studemo/user_data_leaked.json', 'w') as f:
     json.dump(user_data_leaked, f)
 
-with open('data/measuringhatespeech/user_data_no_leak.json', 'w') as f:
+with open('studemo/user_data_no_leak.json', 'w') as f:
     json.dump(user_data_no_leak, f)
