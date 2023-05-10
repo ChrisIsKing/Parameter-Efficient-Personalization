@@ -1,0 +1,7 @@
+venv
+data/*/user_data*
+__pycache__
+__MACOSX
+.DS_Store
+.idea
+.vscode
