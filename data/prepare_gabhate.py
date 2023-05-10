@@ -3,28 +3,22 @@ import json
 import nltk
 from nltk.metrics.distance import masi_distance
 
-annotation_data, annotation_headers = load_csv('data/studemo/annotation_data.csv', delimiter=",", header=True)
-text_data, text_headers = load_csv('data/studemo/text_data.csv', delimiter=",", header=True)
+data, headers = load_csv('gabhate/GabHateCorpus_annotations.tsv', delimiter="\t", header=True)
 
-# Build id to text map
-id_to_text = {}
-for i, row in enumerate(text_data):
-    post_id = row[0]
-    text = row[1]
-    id_to_text[post_id] = text
+label_map = {0: 'Non-hateful', 1: 'Hateful'}
 
-# Build user data
 user_data = {}
 
-for i, row in enumerate(annotation_data):
+for row in data:
     post_id = row[0]
     user_id = row[1]
-    label = row[2]
+    text = row[2]
+    label = label_map[int(row[3])]
+
     if user_id not in user_data:
         user_data[user_id] = {}
-    if post_id not in user_data[user_id]:
-        user_data[user_id][post_id] = {"text": id_to_text[post_id], "label": label}
-    
+    user_data[user_id][post_id] = {"text": text, "label": label}
+
 num_annotators = len(user_data)
 num_examples = sum([len(v) for k, v in user_data.items()])
 
@@ -40,8 +34,8 @@ print("Average number of examples per user: {}".format(num_examples/num_annotato
 print("Average number of users per example: {}".format(avg_num_users_per_example(user_data)))
 
 # Save the data
-with open('data/studemo/user_data_leaked.json', 'w') as f:
+with open('gabhate/user_data_leaked.json', 'w') as f:
     json.dump(user_data_leaked, f)
 
-with open('data/studemo/user_data_no_leak.json', 'w') as f:
+with open('gabhate/user_data_no_leak.json', 'w') as f:
     json.dump(user_data_no_leak, f)

@@ -1,23 +1,23 @@
 from utils import *
+import datasets
 import json
 import nltk
 from nltk.metrics.distance import masi_distance
-
-data, headers = load_csv('data/gabhate/GabHateCorpus_annotations.tsv', delimiter="\t", header=True)
-
-label_map = {0: 'Non-hateful', 1: 'Hateful'}
+dataset = datasets.load_dataset('ucberkeley-dlab/measuring-hate-speech')
+df = dataset['train'].to_pandas()
 
 user_data = {}
 
-for row in data:
-    post_id = row[0]
-    user_id = row[1]
-    text = row[2]
-    label = label_map[int(row[3])]
+for i in range(len(df)):
+    post_id = str(df['comment_id'][i])
+    user_id = str(df['annotator_id'][i])
+    text = df['text'][i]
+    label = str(int(df['hatespeech'][i]))
 
     if user_id not in user_data:
         user_data[user_id] = {}
-    user_data[user_id][post_id] = {"text": text, "label": label}
+    
+    user_data[user_id][post_id] = {'text': text, 'label': label}
 
 num_annotators = len(user_data)
 num_examples = sum([len(v) for k, v in user_data.items()])
@@ -34,8 +34,8 @@ print("Average number of examples per user: {}".format(num_examples/num_annotato
 print("Average number of users per example: {}".format(avg_num_users_per_example(user_data)))
 
 # Save the data
-with open('data/gabhate/user_data_leaked.json', 'w') as f:
+with open('measuringhatespeech/user_data_leaked.json', 'w') as f:
     json.dump(user_data_leaked, f)
 
-with open('data/gabhate/user_data_no_leak.json', 'w') as f:
+with open('measuringhatespeech/user_data_no_leak.json', 'w') as f:
     json.dump(user_data_no_leak, f)

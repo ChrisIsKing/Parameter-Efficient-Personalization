@@ -3,7 +3,7 @@ import json
 import nltk
 from nltk.metrics.distance import masi_distance
 
-data, headers = load_csv('data/tweeteval/annotations_g3.csv', delimiter=",", header=True)
+data, headers = load_csv('tweeteval/annotations_g3.csv', delimiter=",", header=True)
 
 label_map = {"Hateful": 1, "Non-hateful": 0}
 
@@ -33,8 +33,8 @@ print("Average number of examples per user: {}".format(num_examples/num_annotato
 print("Average number of users per example: {}".format(avg_num_users_per_example(user_data)))
 
 # Save the data
-with open('data/tweeteval/user_data_leaked.json', 'w') as f:
+with open('tweeteval/user_data_leaked.json', 'w') as f:
     json.dump(user_data_leaked, f)
 
-with open('data/tweeteval/user_data_no_leak.json', 'w') as f:
+with open('tweeteval/user_data_no_leak.json', 'w') as f:
     json.dump(user_data_no_leak, f)

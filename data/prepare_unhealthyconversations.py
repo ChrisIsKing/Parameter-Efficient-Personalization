@@ -3,7 +3,7 @@ import json
 import nltk
 from nltk.metrics.distance import masi_distance
 
-data, headers = load_csv('data/unhealthyconversations/unhealthy_full.csv', delimiter=",", header=True)
+data, headers = load_csv('unhealthyconversations/unhealthy_full.csv', delimiter=",", header=True)
 
 user_data = {}
 
@@ -33,8 +33,8 @@ print("Average number of examples per user: {}".format(num_examples/num_annotato
 print("Average number of users per example: {}".format(avg_num_users_per_example(user_data)))
 
 # Save the data
-with open('data/unhealthyconversations/user_data_leaked.json', 'w') as f:
+with open('unhealthyconversations/user_data_leaked.json', 'w') as f:
     json.dump(user_data_leaked, f)
 
-with open('data/unhealthyconversations/user_data_no_leak.json', 'w') as f:
+with open('unhealthyconversations/user_data_no_leak.json', 'w') as f:
     json.dump(user_data_no_leak, f)

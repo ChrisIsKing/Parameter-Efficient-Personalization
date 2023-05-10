@@ -1,19 +1,29 @@
 from utils import *
 import json
-import numpy as np
 import nltk
 from nltk.metrics.distance import masi_distance
 
-label_map = {"normal": 0, "hatespeech": 1, "offensive": 2}
+data = json.load(open('cockamamie/cockamamie.json'))
 
-# Load HateXplain dataset
-dir = get_current_directory()
-data = json.load(open(dir+'/data/hatexplain/dataset.json'))
-test_ids = json.load(open(dir+'/data/hatexplain/post_id_divisions.json'))
+user_data = {}
 
-# Prepare data for training
-train_split = 0.8
-user_data, normal_examples, global_examples = prepare_data(data, train_split, test_ids)
+post_map = {}
+
+for item in data['word_ratings']['votes']:
+    for key, value in item.items():
+        # Loop through yes and no votes
+        for voter in value['no_votes']:
+            if voter not in user_data:
+                user_data[voter] = {}
+            if key not in post_map:
+                post_map[key] = len(post_map)
+            user_data[voter][post_map[key]] = {"text": key, "label": "no"} 
+        for voter in value['yes_votes']:
+            if voter not in user_data:
+                user_data[voter] = {}
+            if key not in post_map:
+                post_map[key] = len(post_map)
+            user_data[voter][post_map[key]] = {"text": key, "label": "yes"}
 
 num_annotators = len(user_data)
 num_examples = sum([len(v) for k, v in user_data.items()])
@@ -30,9 +40,8 @@ print("Average number of examples per user: {}".format(num_examples/num_annotato
 print("Average number of users per example: {}".format(avg_num_users_per_example(user_data)))
 
 # Save the data
-with open('data/hatexplain/user_data_leaked.json', 'w') as f:
+with open('cockamamie/user_data_leaked.json', 'w') as f:
     json.dump(user_data_leaked, f)
 
-with open('data/hatexplain/user_data_no_leak.json', 'w') as f:
+with open('cockamamie/user_data_no_leak.json', 'w') as f:
     json.dump(user_data_no_leak, f)
-            
