@@ -16,7 +16,7 @@ for row in data:
     for i, label in enumerate(user_labels):
         if i not in user_data:
             user_data[i] = {}
-        user_data[i][post_id] = {"text": text, "label": label}
+        user_data[i][post_id] = {"text": text, "label": [label]}
 
 num_annotators = len(user_data)
 num_examples = sum([len(v) for k, v in user_data.items()])

@@ -16,7 +16,7 @@ for row in data:
     if user_id not in user_data:
         user_data[user_id] = {}
     if post_id not in user_data[user_id]:
-        user_data[user_id][post_id] = {"text": text, "label": label}
+        user_data[user_id][post_id] = {"text": text, "label": [label]}
 
 num_annotators = len(user_data)
 num_examples = sum([len(v) for k, v in user_data.items()])
