@@ -17,13 +17,13 @@ for item in data['word_ratings']['votes']:
                 user_data[voter] = {}
             if key not in post_map:
                 post_map[key] = len(post_map)
-            user_data[voter][post_map[key]] = {"text": key, "label": "no"} 
+            user_data[voter][post_map[key]] = {"text": key, "label": ["no"]} 
         for voter in value['yes_votes']:
             if voter not in user_data:
                 user_data[voter] = {}
             if key not in post_map:
                 post_map[key] = len(post_map)
-            user_data[voter][post_map[key]] = {"text": key, "label": "yes"}
+            user_data[voter][post_map[key]] = {"text": key, "label": ["yes"]}
 
 num_annotators = len(user_data)
 num_examples = sum([len(v) for k, v in user_data.items()])

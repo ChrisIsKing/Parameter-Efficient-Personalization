@@ -19,11 +19,13 @@ user_data = {}
 for i, row in enumerate(annotation_data):
     post_id = row[0]
     user_id = row[1]
-    label = row[2]
+    labels = row[2:]
     if user_id not in user_data:
         user_data[user_id] = {}
     if post_id not in user_data[user_id]:
-        user_data[user_id][post_id] = {"text": id_to_text[post_id], "label": label}
+        label = [annotation_headers[i+2] for i, l in enumerate(labels) if float(l) >= 1]
+        if label:
+            user_data[user_id][post_id] = {"text": id_to_text[post_id], "label": [annotation_headers[i+2] for i, l in enumerate(labels) if float(l) >= 1]}
     
 num_annotators = len(user_data)
 num_examples = sum([len(v) for k, v in user_data.items()])

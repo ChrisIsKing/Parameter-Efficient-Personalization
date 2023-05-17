@@ -20,7 +20,7 @@ for csv_file in csv_files:
         text = row[0]
         post_id = row[1]
         user_id = row[7]
-        label = [label_map[header[i+9]] for i, item in enumerate(row[9:]) if item == '1']
+        label = list(set([label_map[header[i+9]] for i, item in enumerate(row[9:]) if item == '1']))
         if "neutral" in label:
             continue
         if len(label) < 1:

@@ -6,6 +6,8 @@ from nltk.metrics.distance import masi_distance
 annotation_data, annotation_headers = load_csv('wikidetox/aggression_annotations.tsv', delimiter="\t", header=True)
 text_data, text_headers = load_csv('wikidetox/aggression_annotated_comments.tsv', delimiter="\t", header=True)
 
+label_map = {0: 'Normal', 1: 'Aggressive'}
+
 # Build id to text map
 id_to_text = {}
 for i, row in enumerate(text_data):
@@ -23,7 +25,7 @@ for i, row in enumerate(annotation_data):
     if user_id not in user_data:
         user_data[user_id] = {}
     if post_id not in user_data[user_id]:
-        user_data[user_id][post_id] = {"text": id_to_text[post_id], "label": label}
+        user_data[user_id][post_id] = {"text": id_to_text[post_id], "label": [label_map[int(label)]]}
     
 num_annotators = len(user_data)
 num_examples = sum([len(v) for k, v in user_data.items()])

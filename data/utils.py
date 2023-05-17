@@ -3,6 +3,98 @@ import csv
 import random
 import numpy as np
 from collections import Counter
+from typing import List, Union
+
+instructions = {
+    "cockamanie": "Please rate whether the following text is funny or not funny. Respond 'yes' if you think the text is funny and 'no' if you think the text is not funny.",
+    "gabhate": "Please review the following text and indicate if it has the presence of hate speech. Respond 'Hateful' if the text contains hate speech and 'Non-hateful' if the text does not contain hate speech.",
+    "goemotion": "Please analyze the following text and assign one or more appropriate emotion labels. Emotion labels include happiness, sadness, anger, surprise, joy, fear, disgust. You can select one or multiple emotion labels that best capture the emotional content of the text. Respond with the emotion labels separated by a comma.",
+    "hatexplain": "Please review the following text and indicate if it has the presence of hate speech or is offensive in nature. Respond 'hatespeech' if the text contains hate speech 'offensive' if the text does not contain hate speech but is offensive and 'normal' if the text is neither offensive nor contains hate speech.",
+    "measuringhatespeech": "On a scale of 0-2 rate the level of hatespeech contained in the following text. Respond with '0' if the text does not contain hate speech, '1' if the text contains some hate speech, and '2' if the text contains a lot of hate speech.",
+    "studemo": "Please analyze the following text and assign one or more appropriate emotion labels. Emotion labels include joy, trust, anticipation, surprise, fear, sadness, disgust, anger, valence, and arousal. You can select one or multiple emotion labels that best capture the emotional content of the text. Respond with the emotion labels separated by a comma.",
+    "subjectivediscourse_response": "Please analyze the following text and indicate how the witness responded to the question. Respond with 'answer' if they answered the question reasonably, 'cant-answer-lying' if they could not answer and are lying, 'can't answer-sincere' if they could not answer but are honest about it, 'shift-dodge' if they shifted the topic with the intent of dodging the question, 'answer_overans-sway' if they over answered the question with the intention of swaying or 'shift-correct' if they shifted the topic with the intention of clarifying the question.",
+    "subjectivediscourse_question_sentiment": "Please analyze the following text and rate your sentiment towards the questioners. Sentiment labels include 'somewhatPositive', 'positive', 'veryPositive', 'somewhatNegative', 'veryNegative', 'neutral' and 'negative'. Respond with the sentiment label that best captures your sentiment towards the questioners.",
+    "subjectivediscourse_response_sentiment": "Please analyze the following text and rate your sentiment towards the witness. Sentiment labels include 'somewhatPositive', 'positive', 'veryPositive', 'somewhatNegative', 'veryNegative', 'neutral' and 'negative'. Respond with the sentiment label that best captures your sentiment towards the witness.",
+    "tweeteval": "Please review the following text and indicate if it has the presence of hate speech. Respond 'Hateful' if the text contains hate speech and 'Non-hateful' if the text does not contain hate speech.",
+    "unhealthyconversations": "Please review the following text and indicated if it is 'healthy' or 'unhealthy'. Respond 'healthy' if the text is healthy and 'unhealthy' if the text can be considered hostile, antagonistic, condescending, dismissive or an unfair generalization.",
+    "wikidetox": "Please review the following text and indicate if it has the presence of malicious remark to a person or group. Respond 'Aggressive' if the text contains a personal attack and 'Normal' if the text does not contain a personal attack.",
+}
+
+class InputExample:
+    def __init__(self, guid: int, instruction: str = None, text: str = None, prompt_examples: List = None, label: List[str] = None) -> None:
+        self.guid = guid
+        self.text = text
+        self.prompt_examples = prompt_examples
+        self.instruction = instruction
+        self.label = label
+
+    def process_template(self):
+        prompt = f"{self.instruction}\n"
+        for example in self.prompt_examples:
+            prompt += f"text:{example[0]}\nlabel:{example[1]}\n"
+
+        prompt += f"text:{self.text}\nlabel:"
+
+        return prompt
+    
+    def process_target(self):
+        return ','.join(self.label)
+
+def process_data(data: dict, task: str, example_count: int = 1, max_example_count = 3):
+    """
+    Process training and testing data.
+    """
+    train = []
+    val = []
+    test = []
+    for user_id, user_data in data.items():
+        label_categories = list(dict.fromkeys([label for k,v in user_data['train'].items() for label in v['label']]))
+        # user examples per category
+        user_examples = {}
+        for label in label_categories:
+            user_examples[label] = [post['text'] for id, post in user_data['train'].items() if label in post['label']]
+        
+        for id, post in user_data['train'].items():
+            text = post['text']
+            label = post['label']
+            intruction = instructions[task]
+            prompt_examples = []
+            # take n random examples from each category
+            for label in label_categories:
+                prompt_examples += [(example, label) for example in random.sample(user_examples[label], min(example_count, len(user_examples[label])))]
+
+                if len(prompt_examples) >= max_example_count:
+                    break
+
+            train.append(InputExample(guid=id, instruction=intruction, text=text, prompt_examples=prompt_examples, label=label))
+
+        for id, post in user_data['val'].items():
+            text = post['text']
+            label = post['label']
+            intruction = instructions[task]
+            prompt_examples = []
+            # take n random examples from each category
+            for label in label_categories:
+                prompt_examples += [(example, label) for example in random.sample(user_examples[label], min(example_count, len(user_examples[label])))]
+
+                if len(prompt_examples) >= max_example_count:
+                    break
+            val.append(InputExample(guid=id, instruction=intruction, text=text, prompt_examples=prompt_examples, label=label))
+
+        for id, post in user_data['test'].items():
+            text = post['text']
+            label = post['label']
+            intruction = instructions[task]
+            prompt_examples = []
+            # take n random examples from each category
+            for label in label_categories:
+                prompt_examples += [(example, label) for example in random.sample(user_examples[label], min(example_count, len(user_examples[label])))]
+
+                if len(prompt_examples) >= max_example_count:
+                    break
+
+            test.append(InputExample(guid=id, instruction=intruction, text=text, prompt_examples=prompt_examples, label=label))
+    return train, val, test
 
 def set_seed(seed):
     """
@@ -65,8 +157,8 @@ def prepare_data(data, train_split, test_ids=None, random_state=42):
             group = ["None"]
         post_text = " ".join(v['post_tokens'])
         if label == "normal":
-            v['majority_label'] = "normal"
-            v['post_text'] = post_text
+            v['majority_label'] = ["normal"]
+            v['text'] = post_text
             v['majority_group'] = group
             normal_examples[k] = v
             v['rationale_spans'] = []
@@ -79,8 +171,8 @@ def prepare_data(data, train_split, test_ids=None, random_state=42):
                     global_examples["val"][k] = v
         elif label != "undecided":
             global_examples["all"][k] = v
-            global_examples["all"][k]['majority_label'] = label
-            global_examples["all"][k]['post_text'] = post_text
+            global_examples["all"][k]['majority_label'] = [label]
+            global_examples["all"][k]['text'] = post_text
             global_examples["all"][k]['rationale_spans'] = []
             global_examples["all"][k]['majority_group'] = group
         for index, annotator in enumerate(v['annotators']):
@@ -90,25 +182,25 @@ def prepare_data(data, train_split, test_ids=None, random_state=42):
                 if len(v['rationales']) <= index:
                     ruleset[annotator['annotator_id']][v['post_id']] = {
                     'post_tokens': v['post_tokens'],
-                    'post_text': post_text,
+                    'text': post_text,
                     'rationale': [],
                     'label': v['annotators'][index]['label'],
                     'target_group': v['annotators'][index]['target'],
                     'rationale_tokens': [],
                     'rationale_spans': [],
-                    'majority_label': label,
+                    'majority_label': [label],
                     'majority_group': group
                     }
                 else:
                     ruleset[annotator['annotator_id']][v['post_id']] = {
                         'post_tokens': v['post_tokens'],
-                        'post_text': post_text,
+                        'text': post_text,
                         'rationale': v['rationales'][index],
                         'label': v['annotators'][index]['label'],
                         'target_group': v['annotators'][index]['target'],
                         'rationale_tokens': [token for i, token in enumerate(v['post_tokens']) if v['rationales'][index][i] == 1],
                         'rationale_spans': [],
-                        'majority_label': label,
+                        'majority_label': [label],
                         'majority_group': group
                     }
                     queue = []
@@ -127,13 +219,13 @@ def prepare_data(data, train_split, test_ids=None, random_state=42):
             else:
                 ruleset[annotator['annotator_id']][v['post_id']] = {
                     'post_tokens': v['post_tokens'],
-                    'post_text': post_text,
+                    'text': post_text,
                     'rationale': [],
                     'label': v['annotators'][index]['label'],
                     'target_group': v['annotators'][index]['target'],
                     'rationale_tokens': [],
                     'rationale_spans': [],
-                    'majority_label': label,
+                    'majority_label': [label],
                     'majority_group': group
                 }
     
