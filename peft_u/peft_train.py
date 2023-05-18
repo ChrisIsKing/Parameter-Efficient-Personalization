@@ -14,7 +14,7 @@ def parse_args():
     train_parser = subparsers.add_parser("train")
     test_parser = subparsers.add_parser("test")
 
-    train_parser.add_argument("--model", type=str, required=False, default="google/flan-t5-small")
+    train_parser.add_argument("--model", type=str, required=False, default="bigscience/mt0-xxl")
     train_parser.add_argument("--data", type=str, required=True)
     train_parser.add_argument("--task", type=str, required=True, choices=list(instructions.keys()))
     train_parser.add_argument("--method", type=str, required=False, default="lora", choices=["lora", "prefix"])
