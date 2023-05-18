@@ -29,15 +29,17 @@ class InputExample:
         self.label = label
 
     def process_template(self):
-        prompt = f"{self.instruction}\n"
+        prompt = f"{self.instruction} "
         for example in self.prompt_examples:
-            prompt += f"text:{example[0]}\nlabel:{example[1]}\n"
+            prompt += f"Text: {example[0]} Label: {example[1]} "
 
-        prompt += f"text:{self.text}\nlabel:"
+        prompt += f"Text: {self.text} Label: "
 
         return prompt
     
     def process_target(self):
+        if len(self.label) == 1:
+            return self.label[0]
         return ','.join(self.label)
 
 def process_data(data: dict, task: str, example_count: int = 1, max_example_count = 3):
@@ -60,8 +62,8 @@ def process_data(data: dict, task: str, example_count: int = 1, max_example_coun
             intruction = instructions[task]
             prompt_examples = []
             # take n random examples from each category
-            for label in label_categories:
-                prompt_examples += [(example, label) for example in random.sample(user_examples[label], min(example_count, len(user_examples[label])))]
+            for category in label_categories:
+                prompt_examples += [(example, category) for example in random.sample(user_examples[category], min(example_count, len(user_examples[category])))]
 
                 if len(prompt_examples) >= max_example_count:
                     break
@@ -74,8 +76,8 @@ def process_data(data: dict, task: str, example_count: int = 1, max_example_coun
             intruction = instructions[task]
             prompt_examples = []
             # take n random examples from each category
-            for label in label_categories:
-                prompt_examples += [(example, label) for example in random.sample(user_examples[label], min(example_count, len(user_examples[label])))]
+            for category in label_categories:
+                prompt_examples += [(example, category) for example in random.sample(user_examples[category], min(example_count, len(user_examples[category])))]
 
                 if len(prompt_examples) >= max_example_count:
                     break
@@ -87,8 +89,8 @@ def process_data(data: dict, task: str, example_count: int = 1, max_example_coun
             intruction = instructions[task]
             prompt_examples = []
             # take n random examples from each category
-            for label in label_categories:
-                prompt_examples += [(example, label) for example in random.sample(user_examples[label], min(example_count, len(user_examples[label])))]
+            for category in label_categories:
+                prompt_examples += [(example, category) for example in random.sample(user_examples[category], min(example_count, len(user_examples[category])))]
 
                 if len(prompt_examples) >= max_example_count:
                     break
