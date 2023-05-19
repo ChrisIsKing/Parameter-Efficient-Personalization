@@ -1,12 +1,17 @@
-from peft import LoraConfig, TaskType, PrefixTuningConfig, get_peft_model
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, Seq2SeqTrainingArguments, Seq2SeqTrainer, get_linear_schedule_with_warmup
-from argparse import ArgumentParser
-from data.utils import set_seed, process_data, instructions
-from torch.utils.data import DataLoader
-from functools import partial
 import json
+from argparse import ArgumentParser
+from functools import partial
+
 import torch
+from torch.utils.data import DataLoader
+from peft import LoraConfig, TaskType, PrefixTuningConfig, get_peft_model
+from transformers import (
+    AutoModelForSeq2SeqLM, AutoTokenizer, Seq2SeqTrainingArguments, Seq2SeqTrainer, get_linear_schedule_with_warmup
+)
 from tqdm import tqdm
+
+from data.utils import set_seed, process_data, instructions
+
 
 def parse_args():
     parser = ArgumentParser()
@@ -33,6 +38,7 @@ def parse_args():
 
     return parser.parse_args()
 
+
 def smart_batching_collate(batch, tokenizer):
     """Collate function for PyTorch DataLoader."""
     inputs = [example.process_template() for example in batch]
@@ -44,9 +50,10 @@ def smart_batching_collate(batch, tokenizer):
     batch_encoding["labels"] = labels
     return batch_encoding
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     args = parse_args()
-    if args.mode == "train":
+    if args.mode == 'train':
 
         batch_size = args.batch_size
         num_epochs = args.num_epochs
@@ -63,13 +70,15 @@ if __name__ == "__main__":
 
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path)
         tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        if method == "lora":
-
-            peft_config = LoraConfig(task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1)
-
-        elif method == "prefix":
-            peft_config = PrefixTuningConfig(task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, num_virtual_tokens=20)
-
+        if method == 'lora':
+            peft_config = LoraConfig(
+                task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
+            )
+        else:
+            assert method == 'prefix'
+            peft_config = PrefixTuningConfig(
+                task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, num_virtual_tokens=20
+            )
 
         data = json.load(open(data_path, 'r'))
 
@@ -77,9 +86,10 @@ if __name__ == "__main__":
 
         warmup_steps = int(len(train) * num_epochs * 0.1)
 
-        train_dataloader = DataLoader(train, batch_size=batch_size, shuffle=True, collate_fn=partial(smart_batching_collate, tokenizer=tokenizer))
-        val_dataloader = DataLoader(val, batch_size=batch_size, shuffle=True, collate_fn=partial(smart_batching_collate, tokenizer=tokenizer))
-        test_dataloader = DataLoader(test, batch_size=batch_size, shuffle=True, collate_fn=partial(smart_batching_collate, tokenizer=tokenizer))
+        collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
+        train_dataloader = DataLoader(train, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+        val_dataloader = DataLoader(val, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+        test_dataloader = DataLoader(test, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
 
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
@@ -137,11 +147,3 @@ if __name__ == "__main__":
                 total += 1
             accuracy = correct / total * 100
             print(f"{accuracy=} % on the evaluation dataset")
-
-        
-
-
-
-        
-
-
