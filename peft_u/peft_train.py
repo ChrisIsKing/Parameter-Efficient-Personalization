@@ -1,4 +1,5 @@
 import json
+from os.path import join as os_join
 from argparse import ArgumentParser
 from functools import partial
 
@@ -10,7 +11,9 @@ from transformers import (
 )
 from tqdm import tqdm
 
+from stefutil import *
 from data.utils import set_seed, process_data, instructions
+from peft_u.util import *
 
 
 def parse_args():
@@ -43,6 +46,8 @@ def smart_batching_collate(batch, tokenizer):
     """Collate function for PyTorch DataLoader."""
     inputs = [example.process_template() for example in batch]
     targets = [example.process_target() for example in batch]
+    tokenizer.model_max_length = 512  # TODO: why not set?
+    # TODO: why truncation false?
     batch_encoding = tokenizer(inputs, truncation=False, padding="max_length", return_tensors="pt")
     labels = tokenizer(targets, truncation=True, padding="max_length", return_tensors="pt")
     labels = labels["input_ids"]
@@ -51,10 +56,12 @@ def smart_batching_collate(batch, tokenizer):
     return batch_encoding
 
 
+logger = get_logger('PEFT Train')
+
+
 if __name__ == '__main__':
     args = parse_args()
     if args.mode == 'train':
-
         batch_size = args.batch_size
         num_epochs = args.num_epochs
         learning_rate = args.learning_rate
@@ -67,8 +74,37 @@ if __name__ == '__main__':
         task = args.task
         device = args.device
         set_seed(seed)
+        d_log = dict(
+            batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate, weight_decay=weight_decay,
+            model_name_or_path=model_name_or_path, data_path=data_path, method=method,
+            output_dir=output_dir, seed=seed, task=task, device=device
+        )
+        logger.info(f'Training PEFT w/ {pl.i(d_log)}...')
 
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path)
+        cache_dir = None
+        if on_great_lakes():  # Save to scratch folder if on GL
+            cache_dir = hf_custom_model_cache_dir()
+            logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
+
+        # DEBUG = True
+        DEBUG = False
+        if DEBUG:
+            data_path = os_join(u.proj_path, 'data', data_path)
+            logger.info(f'Loading data from {pl.i(data_path)}...')
+            with open(data_path, 'r') as f:
+                data = json.load(f)
+
+            train, val, test = process_data(data, task)
+
+            tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+
+            collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
+            train_dataloader = DataLoader(train, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+
+            for ba in tqdm(train_dataloader):
+                mic(ba)
+                raise NotImplementedError
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
         tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
         if method == 'lora':
             peft_config = LoraConfig(
@@ -80,7 +116,10 @@ if __name__ == '__main__':
                 task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, num_virtual_tokens=20
             )
 
-        data = json.load(open(data_path, 'r'))
+        data_path = os_join(u.proj_path, 'data', data_path)
+        logger.info(f'Loading data from {pl.i(data_path)}...')
+        with open(data_path, 'r') as f:
+            data = json.load(f)
 
         train, val, test = process_data(data, task)
 
@@ -91,8 +130,12 @@ if __name__ == '__main__':
         val_dataloader = DataLoader(val, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
         test_dataloader = DataLoader(test, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
 
+        logger.info('Loading Peft model...')
         model = get_peft_model(model, peft_config)
-        model.print_trainable_parameters()
+        model_meta = dict(param=get_trainable_param_meta(model), size=get_model_size(model))
+        logger.info(f'Model info: {pl.i(model_meta)}')
+
+        logger.info(f'Moving model to {pl.i(device)}...')
         model.to(device)
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
@@ -105,7 +148,10 @@ if __name__ == '__main__':
         for epoch in range(num_epochs):
             model.train()
             total_loss = 0
-            for step, batch in enumerate(tqdm(train_dataloader)):
+
+            tr_desc = f'Train Epoch {pl.i(epoch)}/{pl.i(num_epochs)}'
+            it = tqdm(enumerate(train_dataloader), desc=tr_desc, total=len(train_dataloader))
+            for step, batch in it:
                 batch = {k: v.to(device) for k, v in batch.items()}
                 outputs = model(**batch)
                 loss = outputs.loss
@@ -118,15 +164,19 @@ if __name__ == '__main__':
             model.eval()
             eval_loss = 0
             eval_preds = []
-            for step, batch in enumerate(tqdm(val_dataloader)):
+            vl_desc = f'Eval Epoch {pl.i(epoch)}/{pl.i(num_epochs)}'
+            it = tqdm(enumerate(val_dataloader), desc=vl_desc, total=len(val_dataloader))
+            for step, batch in it:
                 batch = {k: v.to(device) for k, v in batch.items()}
                 with torch.no_grad():
                     outputs = model(**batch)
                 loss = outputs.loss
                 eval_loss += loss.detach().float()
-                eval_preds.extend(
-                    tokenizer.batch_decode(torch.argmax(outputs.logits, -1).detach().cpu().numpy(), skip_special_tokens=True)
+
+                decoded = tokenizer.batch_decode(
+                    torch.argmax(outputs.logits, -1).detach().cpu().numpy(), skip_special_tokens=True
                 )
+                eval_preds.extend(decoded)
 
             eval_epoch_loss = eval_loss / len(val_dataloader)
             eval_ppl = torch.exp(eval_epoch_loss)

@@ -5,6 +5,9 @@ import numpy as np
 from collections import Counter
 from typing import List
 
+import torch
+
+
 instructions = {
     "cockamanie":
         "Please rate whether the following text is funny or not funny. Respond 'yes' if you think the text is funny "
@@ -21,7 +24,7 @@ instructions = {
     "hatexplain":
         "Please review the following text "
         "and indicate if it has the presence of hate speech or is offensive in nature. "
-        "Respond 'hatespeech' if the text contains hate speech "
+        "Respond 'hatespeech' if the text contains hate speech, "
         "'offensive' if the text does not contain hate speech but is offensive "
         "and 'normal' if the text is neither offensive nor contains hate speech.",
     "measuringhatespeech":
@@ -165,6 +168,7 @@ def set_seed(seed):
     """
     random.seed(seed)
     np.random.seed(seed)
+    torch.manual_seed(0)
 
 
 def flip_dict_of_lists(d):

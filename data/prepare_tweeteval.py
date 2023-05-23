@@ -31,16 +31,10 @@ if __name__ == '__main__':
     num_annotators = len(user_data)
     num_examples = sum([len(v) for k, v in user_data.items()])
 
-    user_data_leaked, agreement_data_ = split_data(user_data, 0.8, random_state=42, leakage=True)
+    user_data_leaked, agreement_data = split_data(user_data, 0.8, random_state=42, leakage=True)
 
-    # mic(agreement_data)
-    # assert agreement_data == []
-    # raise NotImplementedError
-    user_data_no_leak, agreement_data = split_data(user_data, 0.8, random_state=42, leakage=False)
-    # assert agreement_data_ == agreement_data
-    # mic(agreement_data_, agreement_data)
-    # raise NotImplementedError
-    # TODO: 2 `agreement_data`??
+    user_data_no_leak, agreement_data_ = split_data(user_data, 0.8, random_state=42, leakage=False)
+    assert set(agreement_data) == set(agreement_data_)  # sanity check
 
     masi_task = nltk.AnnotationTask(distance=masi_distance)
     masi_task.load_array(agreement_data)
