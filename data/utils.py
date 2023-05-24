@@ -3,9 +3,16 @@ import csv
 import random
 import numpy as np
 from collections import Counter
-from typing import List
+from dataclasses import dataclass
+from typing import List, Dict, Union
 
 import torch
+
+
+__all__ = [
+    'instructions', 'set_seed', 'InputEgDataset', 'process_data',
+    'load_csv', 'split_data', 'avg_num_users_per_example'
+]
 
 
 instructions = {
@@ -73,8 +80,10 @@ instructions = {
 
 
 class InputExample:
-    def __init__(self, guid: int, instruction: str = None, text: str = None, prompt_examples: List = None,
+    def __init__(self, guid: Union[int, str], instruction: str = None, text: str = None, prompt_examples: List = None,
                  label: List[str] = None) -> None:
+        if isinstance(guid, str):
+            guid = int(guid)
         self.guid = guid
         self.text = text
         self.prompt_examples = prompt_examples
@@ -83,8 +92,10 @@ class InputExample:
 
     def process_template(self):
         prompt = f"{self.instruction} "
+        # TODO: separator between examples?
         for example in self.prompt_examples:
-            prompt += f"Text: {example[0]} Label: {example[1]} "
+            txt, lb = example  # TODO: consider multiple examples?
+            prompt += f"Text: {txt} Label: {lb} "
 
         prompt += f"Text: {self.text} Label: "
 
@@ -95,71 +106,79 @@ class InputExample:
             return self.label[0]
         return ','.join(self.label)
 
+    def __repr__(self):
+        return f"InputExample(guid={self.guid}, instruction={self.instruction}, text={self.text}, " \
+               f"prompt_examples={self.prompt_examples}, label={self.label})"
 
-def process_data(data: dict, task: str, example_count: int = 1, max_example_count=3):
+
+@dataclass
+class InputEgDataset:
+    train: List[InputExample]
+    val: List[InputExample]
+    test: List[InputExample]
+
+
+def process_data(
+        data: Dict[str, Dict[str, Dict[str, Dict[str, Union[str, List[str]]]]]], task: str,
+        example_count: int = 1, max_example_count: int = 3, per_user: bool = True
+) -> Union[InputEgDataset, Dict[str, InputEgDataset]]:
     """
-    Process training and testing data.
+    Process data for few-shot learning
+
+    :param data: dataset of user id => dataset split => sample id => sample data
+    :param task: dataset name (e.g. goemotion)
+    :param example_count: number of examples in few-shot prompt, per category
+    :param max_example_count: maximum number of examples to use per category
+    :param per_user: If True, return datasets for each user
     """
-    train = []
-    val = []
-    test = []
-    for user_id, user_data in data.items():
-        label_categories = list(dict.fromkeys([label for k, v in user_data['train'].items() for label in v['label']]))
-        # user examples per category
-        user_examples = {}
-        for label in label_categories:
-            user_examples[label] = [post['text'] for id_, post in user_data['train'].items() if label in post['label']]
+    ret = dict()
+    instruction = instructions[task]
 
-        for id_, post in user_data['train'].items():
-            text = post['text']
-            label = post['label']
-            instruction = instructions[task]
-            prompt_examples = []
-            # take n random examples from each category
-            for category in label_categories:
-                k = min(example_count, len(user_examples[category]))
-                prompt_examples += [(example, category) for example in random.sample(user_examples[category], k=k)]
+    for uid, dset in data.items():
+        def split2label_options(split: str) -> List[str]:
+            return sorted(set().union(*[v['label'] for k, v in dset[split].items()]))
 
-                if len(prompt_examples) >= max_example_count:
-                    break
+        # Get all labels in the train split
+        label_options = split2label_options('train')
+        # sanity check, TODO: maybe not the case?
+        assert label_options == split2label_options('val') == split2label_options('test')
+        lb2txts: Dict[str, List[str]] = {  # label => list of examples w/ that label
+            label: [sample['text'] for id_, sample in dset['train'].items() if label in sample['label']]
+            for label in label_options
+        }
 
-            train.append(
-                InputExample(guid=id_, instruction=instruction, text=text, prompt_examples=prompt_examples, label=label)
-            )
+        def get_split(split: str) -> List[InputExample]:
+            """
+            Add prompt example to each sample in the split
+            """
+            lst = []
+            for sid, sample in dset[split].items():
+                text, label = sample['text'], sample['label']
 
-        for id_, post in user_data['val'].items():
-            text = post['text']
-            label = post['label']
-            instruction = instructions[task]
-            prompt_examples = []
-            # take n random examples from each category
-            for category in label_categories:
-                k = min(example_count, len(user_examples[category]))
-                prompt_examples += [(example, category) for example in random.sample(user_examples[category], k=k)]
+                # take n random examples from each category for few-shot prompt
+                prompt_egs = [  # TODO: possible to select the exact same `text` in the prompt?
+                    [(txt, lb) for txt in random.sample(lb2txts[lb], k=min(example_count, len(lb2txts[lb])))]
+                    for lb in label_options
+                ]
+                prompt_egs = sum(prompt_egs, start=[])[:max_example_count]
 
-                if len(prompt_examples) >= max_example_count:
-                    break
-            val.append(
-                InputExample(guid=id_, instruction=instruction, text=text, prompt_examples=prompt_examples, label=label)
-            )
-
-        for id_, post in user_data['test'].items():
-            text = post['text']
-            label = post['label']
-            instruction = instructions[task]
-            prompt_examples = []
-            # take n random examples from each category
-            for category in label_categories:
-                k = min(example_count, len(user_examples[category]))
-                prompt_examples += [(example, category) for example in random.sample(user_examples[category], k=k)]
-
-                if len(prompt_examples) >= max_example_count:
-                    break
-
-            test.append(
-                InputExample(guid=id_, instruction=instruction, text=text, prompt_examples=prompt_examples, label=label)
-            )
-    return train, val, test
+                lst.append(
+                    InputExample(guid=sid, instruction=instruction, text=text, prompt_examples=prompt_egs, label=label)
+                )
+            return lst
+        ret[uid] = InputEgDataset(
+            train=get_split('train'),
+            val=get_split('val'),
+            test=get_split('test')
+        )
+    if per_user:
+        return ret
+    else:
+        return InputEgDataset(
+            train=sum([dset.train for dset in ret.values()], start=[]),
+            val=sum([dset.val for dset in ret.values()], start=[]),
+            test=sum([dset.test for dset in ret.values()], start=[])
+        )
 
 
 def set_seed(seed):
@@ -273,7 +292,8 @@ def prepare_data(data, train_split, test_ids=None, random_state=42):
                         'rationale': v['rationales'][index],
                         'label': v['annotators'][index]['label'],
                         'target_group': v['annotators'][index]['target'],
-                        'rationale_tokens': [token for i, token in enumerate(v['post_tokens']) if v['rationales'][index][i] == 1],
+                        'rationale_tokens': [token for i, token in enumerate(v['post_tokens']) if
+                                             v['rationales'][index][i] == 1],
                         'rationale_spans': [],
                         'majority_label': [label],
                         'majority_group': group
@@ -346,7 +366,7 @@ def split_data(data, train_split, random_state=42, leakage=True):
                     **{item[0]: item[1] for item in val
                        if item[0] not in user_data[k]['train'] and item[0] not in user_data[k]['test']}
                 }
-        
+
         return user_data, agreement_data
 
     else:
@@ -386,3 +406,29 @@ def avg_num_users_per_example(user_data):
             num_users_per_example[post_id] += 1
 
     return sum(num_users_per_example.values()) / len(num_users_per_example)
+
+
+if __name__ == '__main__':
+    import json
+    from os.path import join as os_join
+
+    from stefutil import *
+    from peft_u.util import *
+
+    def check_process_data():
+        dnm = 'tweeteval/user_data_leaked.json'
+        data_path = os_join(u.proj_path, 'data', dnm)
+        with open(data_path, 'r') as f:
+            data = json.load(f)
+
+        def check_data_fmt():
+            users = list(data.keys())
+            mic(users)
+            tr_u1 = data[users[0]]['train']
+            mic(len(tr_u1))
+            mic(tr_u1)
+        # check_data_fmt()
+
+        dset = process_data(data, task='tweeteval')
+        mic(dset.keys())
+    check_process_data()
