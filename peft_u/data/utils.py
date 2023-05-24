@@ -94,8 +94,6 @@ instructions = {
 class InputExample:
     def __init__(self, guid: Union[int, str], instruction: str = None, text: str = None, prompt_examples: List = None,
                  label: List[str] = None) -> None:
-        if isinstance(guid, str):
-            guid = int(guid)
         self.guid = guid
         self.text = text
         self.prompt_examples = prompt_examples
@@ -152,8 +150,9 @@ def process_data(
 
         # Get all labels in the train split
         label_options = split2label_options('train')
-        # sanity check, TODO: maybe not the case?
-        assert label_options == split2label_options('val') == split2label_options('test')
+        # not necessarily true, see `data2dataset_splits` when `leakage` is False
+        # assert label_options == split2label_options('val') == split2label_options('test')
+
         lb2txts: Dict[str, List[str]] = {  # label => list of examples w/ that label
             label: [sample['text'] for id_, sample in dset['train'].items() if label in sample['label']]
             for label in label_options
@@ -378,6 +377,7 @@ def data2dataset_splits(
         tr_s, vl_s, ts_s = set(tr), set(vl), set(ts)  # for faster lookup
 
         for uid, data_ in tqdm(data.items(), desc='Splitting data', total=len(data)):
+            # By construction, not necessary that each split contains all label options
             u_data = user_data[uid]
             tr_, vl_, ts_ = u_data['train'], u_data['val'], u_data['test']
 
