@@ -1,6 +1,8 @@
 import os
+import random
 from os.path import join as os_join
 
+import numpy as np
 import torch
 
 from stefutil import *
@@ -9,6 +11,7 @@ from peft_u.util.project_paths import BASE_PATH, PROJ_DIR, PKG_NM, DSET_DIR, MOD
 
 __all__ = [
     'sconfig', 'u', 'save_fig',
+    'set_seed', 'flip_dict_of_lists',
     'on_great_lakes', 'get_base_path',
     'hf_custom_model_cache_dir', 'get_trainable_param_meta', 'get_model_size'
 ]
@@ -19,6 +22,29 @@ u = StefUtil(base_path=BASE_PATH, project_dir=PROJ_DIR, package_name=PKG_NM, dat
 u.tokenizer_path = os_join(u.base_path, u.proj_dir, 'tokenizers')
 os.makedirs(u.tokenizer_path, exist_ok=True)
 save_fig = u.save_fig
+
+
+def set_seed(seed):
+    """
+    Set the random seed.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(0)
+
+
+def flip_dict_of_lists(d):
+    """
+    Flip a dictionary of lists.
+    """
+    return {v: k for k, values in d.items() for v in values}
+
+
+def get_current_directory():
+    """
+    Get the current directory.
+    """
+    return os.path.dirname(os.path.abspath(__file__))
 
 
 def on_great_lakes():
