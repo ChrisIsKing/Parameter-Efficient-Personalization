@@ -95,7 +95,7 @@ class InputExample:
         # TODO: separator between examples?
         for example in self.prompt_examples:
             txt, lb = example  # TODO: consider multiple examples?
-            prompt += f"Text: {txt} Label: {lb} "
+            prompt += f"Text: {txt} Label: {lb}. "
 
         prompt += f"Text: {self.text} Label: "
 
