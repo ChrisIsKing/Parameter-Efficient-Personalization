@@ -1,4 +1,3 @@
-import os
 import csv
 import json
 import random
@@ -7,19 +6,18 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import List, Dict, Union, Any
 
-import numpy as np
-import torch
 import nltk
 from nltk.metrics.distance import masi_distance
 from tqdm import tqdm
 
 from stefutil import *
+from peft_u.util import *
 
 
 __all__ = [
-    'instructions', 'set_seed', 'InputEgDataset', 'process_data',
+    'instructions', 'InputEgDataset', 'process_data',
     'load_csv', 'data2dataset_splits', 'avg_num_users_per_example',
-    'flip_dict_of_lists', 'PersonalizedDataset', 'save_datasets'
+    'PersonalizedDataset', 'save_datasets'
 ]
 
 
@@ -195,22 +193,6 @@ def process_data(
         )
 
 
-def set_seed(seed):
-    """
-    Set the random seed.
-    """
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(0)
-
-
-def flip_dict_of_lists(d):
-    """
-    Flip a dictionary of lists.
-    """
-    return {v: k for k, values in d.items() for v in values}
-
-
 def load_csv(path, delimiter=",", header=True):
     """
     Load a csv file and return header as dict and data.
@@ -237,13 +219,6 @@ def most_common(lst, tie_breaker=None):
         if top_2[0][1] == top_2[1][1]:
             return tie_breaker
     return top_2[0][0]
-
-
-def get_current_directory():
-    """
-    Get the current directory.
-    """
-    return os.path.dirname(os.path.abspath(__file__))
 
 
 def prepare_data(data, train_split, test_ids=None, random_state=42):
@@ -469,12 +444,6 @@ def save_datasets(data: PersonalizedDataset = None, base_path: str = None):
 
 
 if __name__ == '__main__':
-    import json
-    from os.path import join as os_join
-
-    from stefutil import *
-    from peft_u.util import *
-
     def check_process_data():
         dnm = 'tweeteval/user_data_leaked.json'
         data_path = os_join(u.proj_path, 'data', dnm)
