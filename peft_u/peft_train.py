@@ -2,6 +2,7 @@ import os
 import json
 from os.path import join as os_join
 from typing import Tuple
+from logging import Logger
 from argparse import ArgumentParser
 from functools import partial
 
@@ -66,22 +67,30 @@ def map_output_dir_nm(
 
 
 def load_model_n_tokenizer(
-        model_name_or_path: str, peft_config: PeftConfig = None, device: str = 'cuda'
+        model_name_or_path: str, peft_config: PeftConfig = None, device: str = 'cuda', verbose: bool = False,
+        logger_fl: Logger = None
 ) -> Tuple[torch.nn.Module, PreTrainedTokenizer]:
     cache_dir = None
     if on_great_lakes():  # Save to scratch folder if on GL
         cache_dir = hf_custom_model_cache_dir()
         logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
+        if logger_fl:
+            logger_fl.info(f'Loading model {model_name_or_path} with cache dir {cache_dir}... ')
 
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
 
-    logger.info('Loading Peft model...')
+    if verbose:
+        logger.info('Loading Peft model...')
     model = get_peft_model(model, peft_config)
     model_meta = dict(param=get_trainable_param_meta(model), size=get_model_size(model))
-    logger.info(f'Model info: {pl.i(model_meta)}')
+    if verbose:
+        logger.info(f'Model info: {pl.i(model_meta)}')
+        if logger_fl:
+            logger_fl.info(f'Model info: {model_meta}')
 
-    logger.info(f'Moving model to {pl.i(device)}...')
+    if verbose:
+        logger.info(f'Moving model to {pl.i(device)}...')
     model.to(device)
     return model, tokenizer
 
@@ -109,8 +118,8 @@ def train_single(
     collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
     tr, vl, ts = dataset.train, dataset.val, dataset.test
     train_dataloader = DataLoader(tr, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-    val_dataloader = DataLoader(vl, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-    test_dataloader = DataLoader(ts, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+    val_dataloader = DataLoader(vl, batch_size=batch_size, collate_fn=collate_fn)
+    test_dataloader = DataLoader(ts, batch_size=batch_size, collate_fn=collate_fn)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
@@ -233,7 +242,6 @@ if __name__ == '__main__':
                 peft_config = PrefixTuningConfig(
                     task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, num_virtual_tokens=20
                 )
-            model, tokenizer = load_model_n_tokenizer(model_name_or_path, peft_config=peft_config, device=device)
 
             data_path = os_join(u.proj_path, 'data', data_path)
             logger.info(f'Loading data from {pl.i(data_path)}...')
@@ -241,18 +249,21 @@ if __name__ == '__main__':
                 data = json.load(f)
 
             dset = process_data(data, task)
+            load_args = dict(peft_config=peft_config, device=device, logger_fl=logger_fl)
             if personalize:
-                for uid in sorted(dset.keys()):
-                    dset_ = dset[uid]
+                for uid in sorted(dset.keys(), key=int):  # TODO: for `tweeteval`, uid is integer
                     logger.info(f'Launching personalized training for User {pl.i(uid)}...')
 
+                    # reload model for each user
+                    model, tokenizer = load_model_n_tokenizer(model_name_or_path, **load_args)
                     train_single(
-                        model=model, tokenizer=tokenizer, dataset=dset_, device=device,
+                        model=model, tokenizer=tokenizer, dataset=dset[uid], device=device,
                         batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
                         weight_decay=weight_decay, output_path=os_join(output_path, f'User-{uid}')
                     )
                     # raise NotImplementedError
             else:
+                model, tokenizer = load_model_n_tokenizer(model_name_or_path, **load_args, verbose=True)
                 train_single(
                     model=model, tokenizer=tokenizer, dataset=dset, device=device,
                     batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
