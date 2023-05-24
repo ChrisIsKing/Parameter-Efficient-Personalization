@@ -1,53 +1,33 @@
-from utils import *
 import json
-import nltk
-from nltk.metrics.distance import masi_distance
+from os.path import join as os_join
+from collections import defaultdict
 
-label_map = json.load(open('goemotion/ekman_mapping.json'))
-label_map = flip_dict_of_lists(label_map)
-label_map['neutral'] = 'neutral'
+from tqdm import tqdm
 
-csv_files = [
-    'goemotion/goemotions_1.csv',
-    'goemotion/goemotions_2.csv',
-    'goemotion/goemotions_3.csv',
-]
+from utils import *
+from peft_u.util import *
 
-user_data = {}
-for csv_file in csv_files:
-    data, header = load_csv(csv_file, delimiter=",", header=True)
-    for row in data:
-        text = row[0]
-        post_id = row[1]
-        user_id = row[7]
-        label = list(set([label_map[header[i+9]] for i, item in enumerate(row[9:]) if item == '1']))
-        if "neutral" in label:
-            continue
-        if len(label) < 1:
-            continue
 
-        if user_id not in user_data:
-            user_data[user_id] = {}
-        if post_id not in user_data[user_id]:
-            user_data[user_id][post_id] = {"text": text, "label": label}
+if __name__ == '__main__':
+    dset_base_path = os_join(u.proj_path, u.dset_dir, 'goemotion')
 
-num_annotators = len(user_data)
-num_examples = sum([len(v) for k, v in user_data.items()])
+    with open(os_join(dset_base_path, 'ekman_mapping.json')) as f:
+        label_map = json.load(f)
+    label_map = flip_dict_of_lists(label_map)
+    label_map['neutral'] = 'neutral'
 
-user_data_leaked, agreement_data = split_data(user_data, 0.8, random_state=42, leakage=True)
-user_data_no_leak, agreement_data = split_data(user_data, 0.8, random_state=42, leakage=False)
+    csv_files = ['goemotions_1.csv', 'goemotions_2.csv', 'goemotions_3.csv',]
 
-masi_task = nltk.AnnotationTask(distance=masi_distance)
-masi_task.load_array(agreement_data)
-print("Krippendorff's alpha: {}".format(masi_task.alpha()))
-print("Number of Users: {}".format(num_annotators))
-print("Number of Examples: {}".format(num_examples))
-print("Average number of examples per user: {}".format(num_examples/num_annotators))
-print("Average number of users per example: {}".format(avg_num_users_per_example(user_data)))
+    user_data = defaultdict(dict)
+    for csv_file in tqdm(csv_files, desc='Processing CSVs'):
+        data, header = load_csv(os_join(dset_base_path, csv_file), delimiter=",", header=True)
+        for row in data:
+            text, post_id, user_id = row[0], row[1], row[7]
+            label = list(set([label_map[header[i+9]] for i, item in enumerate(row[9:]) if item == '1']))
+            if 'neutral' in label or len(label) < 1:
+                continue
 
-# Save the data
-with open('goemotion/user_data_leaked.json', 'w') as f:
-    json.dump(user_data_leaked, f)
+            if post_id not in user_data[user_id]:  # Sample not already added
+                user_data[user_id][post_id] = dict(text=text, label=label)
 
-with open('goemotion/user_data_no_leak.json', 'w') as f:
-    json.dump(user_data_no_leak, f)
+    save_datasets(data=user_data, base_path=dset_base_path)

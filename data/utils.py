@@ -1,18 +1,32 @@
 import os
 import csv
+import json
 import random
-import numpy as np
-from collections import Counter
+from os.path import join as os_join
+from collections import Counter, defaultdict
 from dataclasses import dataclass
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Any
 
+import numpy as np
 import torch
+import nltk
+from nltk.metrics.distance import masi_distance
+from tqdm import tqdm
+
+from stefutil import *
 
 
 __all__ = [
     'instructions', 'set_seed', 'InputEgDataset', 'process_data',
-    'load_csv', 'split_data', 'avg_num_users_per_example'
+    'load_csv', 'data2dataset_splits', 'avg_num_users_per_example',
+    'flip_dict_of_lists', 'PersonalizedDataset', 'save_datasets'
 ]
+
+
+logger = get_logger('Data Utils')
+
+
+PersonalizedDataset = Dict[Any, Dict[str, Dict[str, Union[str, List[str]]]]]  # user_id -> sample id -> a dict of sample
 
 
 instructions = {
@@ -327,70 +341,82 @@ def prepare_data(data, train_split, test_ids=None, random_state=42):
     return ruleset, normal_examples, global_examples
 
 
-def split_data(data, train_split, random_state=42, leakage=True):
+def split2train_val_test(samples: List = None, train_split_ratio: float = 0.8, seed: int = 42):
+    set_seed(seed)
+    random.shuffle(samples)
+
+    tr_split_sz = int(train_split_ratio * len(samples))
+    tr, ts = samples[:tr_split_sz], samples[tr_split_sz:]
+
+    # split remaining examples into test and val
+    vl_split_sz = int(0.5 * len(ts))
+    vl, ts = ts[vl_split_sz:], ts[:vl_split_sz]
+    return tr, vl, ts
+
+
+def data2dataset_splits(
+        data: PersonalizedDataset, train_split_ratio: float = 0.8, seed: int = 42, leakage: bool = True
+):
     """
-    Split data into train and test.
+    Split data into train, val and test sets
+
+    :param data: data to split
+    :param train_split_ratio: ratio of train set
+    :param seed: random seed
+    :param leakage: whether to allow text sample leakage between train and test sets across users
     """
-    set_seed(random_state)
     agreement_data = []
-    user_data = {}
+    user_data = defaultdict(lambda: defaultdict(dict))
 
     if leakage:
-        for k, v in data.items():
-            user_data[k] = {"train": {}, "test": {}, "val": {}}
-            for post_id, value in v.items():
-                agreement_data.append((k, post_id, frozenset(value['label'])))
+        for uid, data_ in tqdm(data.items(), desc='Splitting data', total=len(data)):
+            agreement_data += [(uid, post_id, frozenset(value['label'])) for post_id, value in data_.items()]
 
-            # Split the data into train, test, and val
-            categories = list(dict.fromkeys([target for id_, example in v.items() for target in example['label']]))
-            for category in categories:
-                category_examples = [(id_, example) for id_, example in v.items() if category in example['label']]
-                random.shuffle(category_examples)
-                split = int(train_split * len(category_examples))
-                train = category_examples[:split]
-                # split remaining examples into test and val
-                test = category_examples[split:]
-                split = int(0.5 * len(test))
-                val = test[split:]
-                test = test[:split]
-                user_data[k]['train'] = {
-                    **user_data[k]['train'],
-                    **{item[0]: item[1] for item in train if item[0] not in user_data[k]['test']}
-                }
-                user_data[k]['test'] = {
-                    **user_data[k]['test'],
-                    **{item[0]: item[1] for item in test if item[0] not in user_data[k]['train']}
-                }
-                user_data[k]['val'] = {
-                    **user_data[k]['val'],
-                    **{item[0]: item[1] for item in val
-                       if item[0] not in user_data[k]['train'] and item[0] not in user_data[k]['test']}
-                }
+            label_options = sorted(set().union(*[v['label'] for k, v in data_.items()]))
+            # mic(label_options, label_options)
+            # raise NotImplementedError
 
+            # tr_, vl_, ts_ = dict(), dict(), dict()
+            for label in label_options:
+                samples = [(sid, sample) for sid, sample in data_.items() if label in sample['label']]
+                tr, vl, ts = split2train_val_test(samples, train_split_ratio=train_split_ratio, seed=seed)
+
+                u_data = user_data[uid]
+                tr_, vl_, ts_ = u_data['train'], u_data['val'], u_data['test']
+                # TODO: here, all the label for the given text is stored,
+                #  should also check not already in current split?
+                tr_.update({sid: sample for (sid, sample) in tr if sid not in ts_})
+                ts_.update({sid: sample for (sid, sample) in ts if sid not in tr_})
+                vl_.update({sid: sample for (sid, sample) in vl if sid not in tr_ and sid not in ts_})
+
+            # TODO: this is not the case, the same text may appear more then once for the same user in the same split?
+            # assert set(tr_) & set(ts_) == set() and set(tr_) & set(vl_) == set() and set(ts_) & set(vl_) == set()
+            # assert len(tr_) + len(ts_) + len(vl_) == len(data_)  # sanity check mutually exclusive
+            # raise NotImplementedError
         return user_data, agreement_data
 
     else:
-        all_data = list(set([post_id for k, v in data.items() for post_id in v]))
-        random.shuffle(all_data)
-        split = int(train_split * len(all_data))
-        train = all_data[:split]
-        # split remaining examples into test and val
-        test = all_data[split:]
-        split = int(0.5 * len(test))
-        val = test[split:]
-        test = test[:split]
+        lst_sids = list(set([sid for uid, data_ in data.items() for sid in data_]))
+        random.shuffle(lst_sids)
 
-        for k, v in data.items():
-            user_data[k] = {"train": {}, "test": {}, "val": {}}
-            for post_id, value in v.items():
-                agreement_data.append((k, post_id, frozenset(value['label'])))
-                if post_id in train:
-                    user_data[k]['train'][post_id] = value
-                elif post_id in test:
-                    user_data[k]['test'][post_id] = value
-                elif post_id in val:
-                    user_data[k]['val'][post_id] = value
+        tr, vl, ts = split2train_val_test(lst_sids, train_split_ratio=train_split_ratio, seed=seed)
+        tr_s, vl_s, ts_s = set(tr), set(vl), set(ts)  # for faster lookup
 
+        for uid, data_ in tqdm(data.items(), desc='Splitting data', total=len(data)):
+            u_data = user_data[uid]
+            tr_, vl_, ts_ = u_data['train'], u_data['val'], u_data['test']
+
+            for post_id, value in data_.items():
+                agreement_data.append((uid, post_id, frozenset(value['label'])))
+
+                if post_id in tr_s:
+                    d = tr_
+                elif post_id in ts_s:
+                    d = ts_
+                else:
+                    assert post_id in vl_s  # sanity check
+                    d = vl_
+                d[post_id] = value
         return user_data, agreement_data
 
 
@@ -406,6 +432,40 @@ def avg_num_users_per_example(user_data):
             num_users_per_example[post_id] += 1
 
     return sum(num_users_per_example.values()) / len(num_users_per_example)
+
+
+def save_datasets(data: PersonalizedDataset = None, base_path: str = None):
+    """
+    Saves processed personalized dataset as json files on disk, one leaked and one non-leaked.
+    """
+    num_annotators = len(data)
+    num_examples = sum([len(v) for k, v in data.items()])
+
+    user_data_leaked, agreement_data = data2dataset_splits(data, 0.8, seed=42, leakage=True)
+    user_data_no_leak, agreement_data_ = data2dataset_splits(data, 0.8, seed=42, leakage=False)
+    assert set(agreement_data) == set(agreement_data_)  # sanity check
+
+    masi_task = nltk.AnnotationTask(distance=masi_distance)
+    masi_task.load_array(agreement_data)
+    d_log = {
+        'Krippendorff\'s alpha': masi_task.alpha(),
+        '#Users': num_annotators,
+        '#Examples': num_examples,
+        'Avg #Examples/User': num_examples/num_annotators,
+        'Avg #Users/Example': avg_num_users_per_example(data),
+    }
+    logger.info(pl.i(d_log))
+
+    # Save the data
+    fnm_leaked = os_join(base_path, 'user_data_leaked.json')
+    with open(fnm_leaked, 'w') as f:
+        json.dump(user_data_leaked, f)
+    logger.info(f'Leaked data saved to {pl.i(fnm_leaked)}')
+
+    fnm_no_leak = os_join(base_path, 'user_data_no_leak.json')
+    with open(fnm_no_leak, 'w') as f:
+        json.dump(user_data_no_leak, f)
+    logger.info(f'Non-leaked data saved to {pl.i(fnm_no_leak)}')
 
 
 if __name__ == '__main__':
