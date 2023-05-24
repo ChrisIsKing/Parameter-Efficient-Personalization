@@ -113,8 +113,14 @@ def train_single(
         model: torch.nn.Module, tokenizer: PreTrainedTokenizer, dataset: InputEgDataset,
         device: str = 'cuda',
         batch_size: int = 8, num_epochs: int = 3, learning_rate: float = 2e-5, weight_decay: float = 0.01,
-        output_path: str = None
+        output_path: str = None, verbose: bool = False
 ):
+    def _save(dir_nm: str):
+        model.save_pretrained(os_join(output_path, dir_nm))
+        tokenizer.save_pretrained(os_join(output_path, dir_nm))
+        if verbose:
+            logger.info(f'Model and tokenizer saved to {pl.i(output_path)}')
+
     collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
     tr, vl, ts = dataset.train, dataset.val, dataset.test
     train_dataloader = DataLoader(tr, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
@@ -136,6 +142,8 @@ def train_single(
 
     pret = MlPrettier(ref=dict(step=n_step_per_epoch, epoch=num_epochs), metric_keys=['cls_acc'])
     ls = LogStep(prettier=pret, logger=logger, file_logger=logger_fl, tb_writer=tb_writer)
+
+    best_val_loss = float('inf')
 
     for epoch in range(1, num_epochs+1):
         model.train()
@@ -196,9 +204,12 @@ def train_single(
         d_log.update(dict(train_epoch_loss=train_epoch_loss, train_ppl=np.exp(train_epoch_loss)))
         logger.info(pl.i(ls.prettier(d_log)))
 
-    model.save_pretrained(output_path)
-    tokenizer.save_pretrained(output_path)
-    logger.info(f'Model and tokenizer saved to {pl.i(output_path)}')
+        _save(f'epoch_{epoch:02d}')
+        if eval_epoch_loss < best_val_loss:
+            best_val_loss = eval_epoch_loss
+            _save('trained')
+            logger.info(f'Best model saved w/ eval loss {pl.i(best_val_loss)}')
+            logger_fl.info(f'Best model saved w/ eval loss {best_val_loss}')
 
 
 if __name__ == '__main__':

@@ -18,8 +18,8 @@ user_data, normal_examples, global_examples = prepare_data(data, train_split, te
 num_annotators = len(user_data)
 num_examples = sum([len(v) for k, v in user_data.items()])
 
-user_data_leaked, agreement_data = split_data(user_data, 0.8, random_state=42, leakage=True)
-user_data_no_leak, agreement_data = split_data(user_data, 0.8, random_state=42, leakage=False)
+user_data_leaked, agreement_data = data2dataset_splits(user_data, 0.8, seed=42, leakage=True)
+user_data_no_leak, agreement_data = data2dataset_splits(user_data, 0.8, seed=42, leakage=False)
 
 masi_task = nltk.AnnotationTask(distance=masi_distance)
 masi_task.load_array(agreement_data)
