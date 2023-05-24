@@ -6,7 +6,6 @@ from logging import Logger
 from argparse import ArgumentParser
 from functools import partial
 
-
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -19,7 +18,7 @@ from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
 from stefutil import *
-from data.utils import set_seed, process_data, instructions, InputEgDataset
+from data.utils import process_data, instructions, InputEgDataset
 from peft_u.util import *
 
 
@@ -111,10 +110,12 @@ def smart_batching_collate(batch, tokenizer):
 
 def train_single(
         model: torch.nn.Module, tokenizer: PreTrainedTokenizer, dataset: InputEgDataset,
-        device: str = 'cuda',
+        device: str = 'cuda', seed: int = 42,
         batch_size: int = 8, num_epochs: int = 3, learning_rate: float = 2e-5, weight_decay: float = 0.01,
         output_path: str = None, verbose: bool = False
 ):
+    set_seed(seed)
+
     def _save(dir_nm: str):
         model.save_pretrained(os_join(output_path, dir_nm))
         tokenizer.save_pretrained(os_join(output_path, dir_nm))
@@ -123,6 +124,7 @@ def train_single(
 
     collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
     tr, vl, ts = dataset.train, dataset.val, dataset.test
+
     train_dataloader = DataLoader(tr, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
     val_dataloader = DataLoader(vl, batch_size=batch_size, collate_fn=collate_fn)
     test_dataloader = DataLoader(ts, batch_size=batch_size, collate_fn=collate_fn)
@@ -139,6 +141,9 @@ def train_single(
 
     logger_fl = get_logger('PEFT Train', kind='file-write', file_path=os_join(output_path, 'train.log'))
     tb_writer = SummaryWriter(os_join(output_path, f'tensorboard'))
+    d_log = dict(train=len(tr), val=len(vl), test=len(ts))
+    logger.info(f'Dataset sizes: {pl.i(d_log)}')
+    logger_fl.info(f'Dataset sizes: {d_log}')
 
     pret = MlPrettier(ref=dict(step=n_step_per_epoch, epoch=num_epochs), metric_keys=['cls_acc'])
     ls = LogStep(prettier=pret, logger=logger, file_logger=logger_fl, tb_writer=tb_writer)
@@ -175,7 +180,11 @@ def train_single(
         cum_eval_loss = 0
         eval_preds = []
         vl_desc = f'Eval Epoch {pl.i(epoch)}/{pl.i(num_epochs)}'
-        it = tqdm(enumerate(val_dataloader), desc=vl_desc, total=len(val_dataloader))
+
+        n_vl_step = len(val_dataloader)
+        it = tqdm(enumerate(val_dataloader), desc=vl_desc, total=n_vl_step)
+
+        eval_epoch_loss = None
         for step, batch in it:
             batch = {k: v.to(device) for k, v in batch.items()}
             with torch.no_grad():
@@ -187,29 +196,34 @@ def train_single(
             )
             eval_preds.extend(decoded)
 
-        eval_epoch_loss = cum_eval_loss / len(val_dataloader)
-        eval_ppl = np.exp(eval_epoch_loss)
+            if step + 1 == n_vl_step:  # last iteration
+                eval_epoch_loss = cum_eval_loss / len(val_dataloader)
+                eval_ppl = np.exp(eval_epoch_loss)
 
-        n_correct = 0  # Eval classification accuracy
-        n = 0
-        for pred, true in zip(eval_preds, vl):
-            if pred.strip() == true.process_target().strip():
-                n_correct += 1
-            n += 1
+                n_correct = 0  # Eval classification accuracy
+                n = 0
+                for pred, true in zip(eval_preds, vl):
+                    if pred.strip() == true.process_target().strip():
+                        n_correct += 1
+                    n += 1
 
-        d_log = dict(epoch=epoch, eval_loss=eval_epoch_loss, eval_ppl=eval_ppl, eval_cls_acc=n_correct/n)
-        ls(d_log, training=False, to_console=False)
-
-        train_epoch_loss = total_tr_loss / len(train_dataloader)
-        d_log.update(dict(train_epoch_loss=train_epoch_loss, train_ppl=np.exp(train_epoch_loss)))
-        logger.info(pl.i(ls.prettier(d_log)))
+                train_epoch_loss = total_tr_loss / len(train_dataloader)
+                d_log = dict(
+                    epoch=epoch, eval_loss=eval_epoch_loss, eval_ppl=eval_ppl, eval_cls_acc=n_correct/n,
+                    train_epoch_loss=train_epoch_loss, train_ppl=np.exp(train_epoch_loss)
+                )
+                ls.pbar = it
+                ls(d_log, training=False, to_console=False)
+        assert eval_epoch_loss is not None  # sanity check
 
         _save(f'epoch_{epoch:02d}')
         if eval_epoch_loss < best_val_loss:
             best_val_loss = eval_epoch_loss
             _save('trained')
-            logger.info(f'Best model saved w/ eval loss {pl.i(best_val_loss)}')
-            logger_fl.info(f'Best model saved w/ eval loss {best_val_loss}')
+
+            best_val_loss_ = round(best_val_loss, 4)
+            logger.info(f'Best model saved w/ eval loss {pl.i(best_val_loss_)}')
+            logger_fl.info(f'Best model saved w/ eval loss {best_val_loss_}')
 
 
 if __name__ == '__main__':
@@ -233,7 +247,6 @@ if __name__ == '__main__':
             output_path = os_join(get_base_path(), u.proj_dir, u.model_dir, map_output_dir_nm(**map_args))
             os.makedirs(output_path, exist_ok=True)
 
-            set_seed(seed)
             d_log = dict(
                 batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate, weight_decay=weight_decay,
                 model_name_or_path=model_name_or_path, data_path=data_path, method=method,
@@ -262,13 +275,17 @@ if __name__ == '__main__':
             dset = process_data(data, task)
             load_args = dict(peft_config=peft_config, device=device, logger_fl=logger_fl)
             if personalize:
-                for uid in sorted(dset.keys(), key=int):  # TODO: for `tweeteval`, uid is integer
+                uids = list(dset.keys())
+                sort_fn = int if all(uid.isdigit() for uid in uids) else None
+                for uid in sorted(uids, key=sort_fn):
+                    if uid != '1':
+                        continue
                     logger.info(f'Launching personalized training for User {pl.i(uid)}...')
 
                     # reload model for each user
                     model, tokenizer = load_model_n_tokenizer(model_name_or_path, **load_args)
                     train_single(
-                        model=model, tokenizer=tokenizer, dataset=dset[uid], device=device,
+                        model=model, tokenizer=tokenizer, dataset=dset[uid], device=device, seed=seed,
                         batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
                         weight_decay=weight_decay, output_path=os_join(output_path, f'User-{uid}')
                     )
