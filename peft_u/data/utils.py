@@ -308,20 +308,13 @@ def data2dataset_splits(
 
                 u_data = user_data[uid]
                 tr_, vl_, ts_ = u_data['train'], u_data['val'], u_data['test']
-                # TODO: for multi-label samples, the sample is included more than once
-                #  => same sample appears in multiple splits??
-                tr_.update({sid: sample for (sid, sample) in tr if sid not in ts_})
-                ts_.update({sid: sample for (sid, sample) in ts if sid not in tr_})
+                # to ensure multi-label sample appears in only one split
+                tr_.update({sid: sample for (sid, sample) in tr if sid not in vl_ and sid not in ts_})
+                ts_.update({sid: sample for (sid, sample) in ts if sid not in tr_ and sid not in vl_})
                 vl_.update({sid: sample for (sid, sample) in vl if sid not in tr_ and sid not in ts_})
-
-            # TODO: this is not the case, the same text may appear in different same splits?
-            #  e.g. 1st iteration in val, 2nd iteration in train is possible
-            mic(set(tr_) & set(ts_), set(tr_) & set(vl_), set(ts_) & set(vl_))
             assert set(tr_) & set(ts_) == set() and set(tr_) & set(vl_) == set() and set(ts_) & set(vl_) == set()
             assert len(tr_) + len(ts_) + len(vl_) == len(data_)  # sanity check mutually exclusive
-            raise NotImplementedError
         return user_data, agreement_data
-
     else:
         lst_sids = list(set([sid for uid, data_ in data.items() for sid in data_]))
         random.shuffle(lst_sids)
@@ -333,7 +326,6 @@ def data2dataset_splits(
             # By construction, not necessary that each split contains all label options
             u_data = user_data[uid]
             tr_, vl_, ts_ = u_data['train'], u_data['val'], u_data['test']
-
             for post_id, value in data_.items():
                 agreement_data.append((uid, post_id, frozenset(value['label'])))
 
