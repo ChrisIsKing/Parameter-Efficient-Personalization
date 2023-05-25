@@ -4,7 +4,7 @@ import random
 from os.path import join as os_join
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from typing import List, Dict, Union, Any
+from typing import Tuple, List, Dict, Union, Any
 
 import nltk
 from nltk.metrics.distance import masi_distance
@@ -15,80 +15,18 @@ from peft_u.util import *
 
 
 __all__ = [
-    'instructions', 'InputEgDataset', 'process_data',
+    'InputEgDataset', 'load_dataset_with_prompts',
     'load_csv', 'data2dataset_splits', 'avg_num_users_per_example',
-    'PersonalizedDataset', 'save_datasets'
+    'PersonalizedData', 'PersonalizedDataset', 'save_datasets'
 ]
 
 
 logger = get_logger('Data Utils')
 
 
-PersonalizedDataset = Dict[Any, Dict[str, Dict[str, Union[str, List[str]]]]]  # user_id -> sample id -> a dict of sample
-
-
-instructions = {
-    "cockamanie":
-        "Please rate whether the following text is funny or not funny. Respond 'yes' if you think the text is funny "
-        "and 'no' if you think the text is not funny.",
-    "gabhate":
-        "Please review the following text and indicate if it has the presence of hate speech. "
-        "Respond 'Hateful' if the text contains hate speech "
-        "and 'Non-hateful' if the text does not contain hate speech.",
-    "goemotion":
-        "Please analyze the following text and assign one or more appropriate emotion labels. "
-        "Emotion labels include happiness, sadness, anger, surprise, joy, fear, disgust. "
-        "You can select one or multiple emotion labels that best capture the emotional content of the text. "
-        "Respond with the emotion labels separated by a comma.",
-    "hatexplain":
-        "Please review the following text "
-        "and indicate if it has the presence of hate speech or is offensive in nature. "
-        "Respond 'hatespeech' if the text contains hate speech, "
-        "'offensive' if the text does not contain hate speech but is offensive "
-        "and 'normal' if the text is neither offensive nor contains hate speech.",
-    "measuringhatespeech":
-        "On a scale of 0-2 rate the level of hatespeech contained in the following text. "
-        "Respond with '0' if the text does not contain hate speech, "
-        "'1' if the text contains some hate speech, and '2' if the text contains a lot of hate speech.",
-    "studemo":
-        "Please analyze the following text and assign one or more appropriate emotion labels. "
-        "Emotion labels include "
-        "joy, trust, anticipation, surprise, fear, sadness, disgust, anger, valence, and arousal. "
-        "You can select one or multiple emotion labels that best capture the emotional content of the text. "
-        "Respond with the emotion labels separated by a comma.",
-    "subjectivediscourse_response":
-        "Please analyze the following text and indicate how the witness responded to the question. "
-        "Respond with 'answer' if they answered the question reasonably, "
-        "'cant-answer-lying' if they could not answer and are lying, "
-        "'can't answer-sincere' if they could not answer but are honest about it, "
-        "'shift-dodge' if they shifted the topic with the intent of dodging the question, "
-        "'answer_overans-sway' if they over answered the question with the intention of swaying "
-        "or 'shift-correct' if they shifted the topic with the intention of clarifying the question.",
-    "subjectivediscourse_question_sentiment":
-        "Please analyze the following text and rate your sentiment towards the questioners. "
-        "Sentiment labels include "
-        "'somewhatPositive', 'positive', 'veryPositive', 'somewhatNegative', 'veryNegative', 'neutral' and 'negative'. "
-        "Respond with the sentiment label that best captures your sentiment towards the questioners.",
-    "subjectivediscourse_response_sentiment":
-        "Please analyze the following text and rate your sentiment towards the witness. "
-        "Sentiment labels include "
-        "'somewhatPositive', 'positive', 'veryPositive', 'somewhatNegative', 'veryNegative', 'neutral' and 'negative'. "
-        "Respond with the sentiment label that best captures your sentiment towards the witness.",
-    "tweeteval":
-        "Please review the following text and indicate if it has the presence of hate speech. "
-        "Respond 'Hateful' if the text contains hate speech "
-        "and 'Non-hateful' if the text does not contain hate speech.",
-    "unhealthyconversations":
-        "Please review the following text and indicated if it is 'healthy' or 'unhealthy'. "
-        "Respond 'healthy' if the text is healthy "
-        "and 'unhealthy' "
-        "if the text can be considered hostile, antagonistic, condescending, dismissive or an unfair generalization.",
-    "wikidetox":
-        "Please review the following text "
-        "and indicate if it has the presence of malicious remark to a person or group. "
-        "Respond 'Aggressive' if the text contains a personal attack "
-        "and 'Normal' if the text does not contain a personal attack.",
-}
+PersonalizedData = Dict[Any, Dict[str, Dict[str, Union[str, List[str]]]]]  # user_id -> sample id -> a dict of sample
+# user_id -> dataset split -> sample id -> a dict of sample
+PersonalizedDataset = Dict[str, Dict[str, Dict[str, Dict[str, Union[str, List[str]]]]]]
 
 
 class InputExample:
@@ -128,25 +66,39 @@ class InputEgDataset:
     test: List[InputExample]
 
 
-def process_data(
-        data: Dict[str, Dict[str, Dict[str, Dict[str, Union[str, List[str]]]]]], task: str,
+def _load_dataset(dataset_name: str = None, leakage: bool = False) -> PersonalizedDataset:
+    leak_str = 'leaked' if leakage else 'no_leak'
+    data_dir_nm = os_join(dataset_name, f'user_data_{leak_str}.json')
+    data_path = os_join(u.proj_path, u.dset_dir, data_dir_nm)
+
+    d_log = dict(dataset_name=dataset_name, leakage=leakage, path=data_path)
+    logger.info(f'Loading data w/ {pl.i(d_log)}...')
+    with open(data_path, 'r') as f:
+        data = json.load(f)
+    return data
+
+
+def load_dataset_with_prompts(
+        dataset_name: str, leakage: bool = False,
         example_count: int = 1, max_example_count: int = 3, per_user: bool = True
 ) -> Union[InputEgDataset, Dict[str, InputEgDataset]]:
     """
     Process data for few-shot learning
 
-    :param data: dataset of user id => dataset split => sample id => sample data
-    :param task: dataset name (e.g. goemotion)
+    :param dataset_name: dataset name (e.g. goemotion)
+        Will load a dataset of (user id => dataset split => sample id => sample data)
+    :param leakage: See
     :param example_count: number of examples in few-shot prompt, per category
     :param max_example_count: maximum number of examples to use per category
     :param per_user: If True, return datasets for each user
     """
     ret = dict()
-    instruction = instructions[task]
+    instruction = sconfig(f'datasets.{dataset_name}.instruction')
+    dset = _load_dataset(dataset_name=dataset_name, leakage=leakage)
 
-    for uid, dset in data.items():
+    for uid, dset_ in dset.items():
         def split2label_options(split: str) -> List[str]:
-            return sorted(set().union(*[v['label'] for k, v in dset[split].items()]))
+            return sorted(set().union(*[v['label'] for k, v in dset_[split].items()]))
 
         # Get all labels in the train split
         label_options = split2label_options('train')
@@ -154,7 +106,7 @@ def process_data(
         # assert label_options == split2label_options('val') == split2label_options('test')
 
         lb2txts: Dict[str, List[str]] = {  # label => list of examples w/ that label
-            label: [sample['text'] for id_, sample in dset['train'].items() if label in sample['label']]
+            label: [sample['text'] for id_, sample in dset_['train'].items() if label in sample['label']]
             for label in label_options
         }
 
@@ -163,7 +115,7 @@ def process_data(
             Add prompt example to each sample in the split
             """
             lst = []
-            for sid, sample in dset[split].items():
+            for sid, sample in dset_[split].items():
                 text, label = sample['text'], sample['label']
 
                 # take n random examples from each category for few-shot prompt
@@ -315,22 +267,22 @@ def prepare_data(data, train_split, test_ids=None, random_state=42):
     return ruleset, normal_examples, global_examples
 
 
-def split2train_val_test(samples: List = None, train_split_ratio: float = 0.8, seed: int = 42):
+def _split2train_val_test(samples: List = None, train_split_ratio: float = 0.8, seed: int = 42):
     set_seed(seed)
     random.shuffle(samples)
 
-    tr_split_sz = int(train_split_ratio * len(samples))
+    tr_split_sz = round(train_split_ratio * len(samples))
     tr, ts = samples[:tr_split_sz], samples[tr_split_sz:]
 
     # split remaining examples into test and val
-    vl_split_sz = int(0.5 * len(ts))
+    vl_split_sz = round(0.5 * len(ts))
     vl, ts = ts[vl_split_sz:], ts[:vl_split_sz]
     return tr, vl, ts
 
 
 def data2dataset_splits(
-        data: PersonalizedDataset, train_split_ratio: float = 0.8, seed: int = 42, leakage: bool = True
-):
+        data: PersonalizedData, train_split_ratio: float = 0.8, seed: int = 42, leakage: bool = True
+) -> Tuple[PersonalizedDataset, List]:
     """
     Split data into train, val and test sets
 
@@ -342,41 +294,42 @@ def data2dataset_splits(
     agreement_data = []
     user_data = defaultdict(lambda: defaultdict(dict))
 
+    it = tqdm(data.items(), desc='Splitting data', total=len(data), unit='user')
     if leakage:
-        for uid, data_ in tqdm(data.items(), desc='Splitting data', total=len(data)):
+        for uid, data_ in it:
             agreement_data += [(uid, post_id, frozenset(value['label'])) for post_id, value in data_.items()]
 
             label_options = sorted(set().union(*[v['label'] for k, v in data_.items()]))
-            # mic(label_options, label_options)
-            # raise NotImplementedError
 
-            # tr_, vl_, ts_ = dict(), dict(), dict()
+            tr_, vl_, ts_ = dict(), dict(), dict()  # to disable warning
             for label in label_options:
                 samples = [(sid, sample) for sid, sample in data_.items() if label in sample['label']]
-                tr, vl, ts = split2train_val_test(samples, train_split_ratio=train_split_ratio, seed=seed)
+                tr, vl, ts = _split2train_val_test(samples, train_split_ratio=train_split_ratio, seed=seed)
 
                 u_data = user_data[uid]
                 tr_, vl_, ts_ = u_data['train'], u_data['val'], u_data['test']
-                # TODO: here, all the label for the given text is stored,
-                #  should also check not already in current split?
+                # TODO: for multi-label samples, the sample is included more than once
+                #  => same sample appears in multiple splits??
                 tr_.update({sid: sample for (sid, sample) in tr if sid not in ts_})
                 ts_.update({sid: sample for (sid, sample) in ts if sid not in tr_})
                 vl_.update({sid: sample for (sid, sample) in vl if sid not in tr_ and sid not in ts_})
 
-            # TODO: this is not the case, the same text may appear more then once for the same user in the same split?
-            # assert set(tr_) & set(ts_) == set() and set(tr_) & set(vl_) == set() and set(ts_) & set(vl_) == set()
-            # assert len(tr_) + len(ts_) + len(vl_) == len(data_)  # sanity check mutually exclusive
-            # raise NotImplementedError
+            # TODO: this is not the case, the same text may appear in different same splits?
+            #  e.g. 1st iteration in val, 2nd iteration in train is possible
+            mic(set(tr_) & set(ts_), set(tr_) & set(vl_), set(ts_) & set(vl_))
+            assert set(tr_) & set(ts_) == set() and set(tr_) & set(vl_) == set() and set(ts_) & set(vl_) == set()
+            assert len(tr_) + len(ts_) + len(vl_) == len(data_)  # sanity check mutually exclusive
+            raise NotImplementedError
         return user_data, agreement_data
 
     else:
         lst_sids = list(set([sid for uid, data_ in data.items() for sid in data_]))
         random.shuffle(lst_sids)
 
-        tr, vl, ts = split2train_val_test(lst_sids, train_split_ratio=train_split_ratio, seed=seed)
+        tr, vl, ts = _split2train_val_test(lst_sids, train_split_ratio=train_split_ratio, seed=seed)
         tr_s, vl_s, ts_s = set(tr), set(vl), set(ts)  # for faster lookup
 
-        for uid, data_ in tqdm(data.items(), desc='Splitting data', total=len(data)):
+        for uid, data_ in it:
             # By construction, not necessary that each split contains all label options
             u_data = user_data[uid]
             tr_, vl_, ts_ = u_data['train'], u_data['val'], u_data['test']
@@ -409,7 +362,7 @@ def avg_num_users_per_example(user_data):
     return sum(num_users_per_example.values()) / len(num_users_per_example)
 
 
-def save_datasets(data: PersonalizedDataset = None, base_path: str = None):
+def save_datasets(data: PersonalizedData = None, base_path: str = None):
     """
     Saves processed personalized dataset as json files on disk, one leaked and one non-leaked.
     """
@@ -444,7 +397,7 @@ def save_datasets(data: PersonalizedDataset = None, base_path: str = None):
 
 
 if __name__ == '__main__':
-    def check_process_data():
+    def check_data():
         dnm = 'tweeteval/user_data_leaked.json'
         data_path = os_join(u.proj_path, 'data', dnm)
         with open(data_path, 'r') as f:
@@ -457,7 +410,9 @@ if __name__ == '__main__':
             mic(len(tr_u1))
             mic(tr_u1)
         # check_data_fmt()
+    # check_data()
 
-        dset = process_data(data, task='tweeteval')
+    def check_add_template():
+        dset = load_dataset_with_prompts(dataset_name='tweeteval')
         mic(dset.keys())
-    check_process_data()
+    check_add_template()
