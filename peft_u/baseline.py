@@ -1,13 +1,12 @@
 import os
 from os.path import join as os_join
-from typing import Tuple, List
+from typing import Tuple
 from logging import Logger
 from argparse import ArgumentParser
 from functools import partial
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from peft import LoraConfig, TaskType, PrefixTuningConfig, get_peft_model, PeftConfig, PeftModel
 from transformers import (
@@ -19,7 +18,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 from stefutil import *
 from peft_u.util import *
-from peft_u.data.utils import *
+import peft_u.util.models as model_util
+from peft_u.preprocess.load_dataset import *
 
 
 logger = get_logger('PEFT Train')
@@ -56,31 +56,11 @@ def parse_args():
     return parser.parse_args()
 
 
-def map_output_dir_nm(
-        model_name: str = None, name: str = None, peft_approach: str = None, dataset_name: str = None
-):
-    if '/' in model_name:
-        org, model_name = model_name.split('/')
-    d = dict(md_nm=model_name, peft=peft_approach[0], ds=dataset_name)
-    date = now(fmt='short-date')
-    ret = f'{date}_{pl.pa(d)}'
-    if name:
-        ret = f'{ret}_{name}'
-    return ret
-
-
-def _get_hf_cache_dir():
-    ret = None
-    if on_great_lakes():  # download to scratch folder if on GL to save space
-        ret = hf_custom_model_cache_dir()
-    return ret
-
-
 def load_model_n_tokenizer(
         model_name_or_path: str, peft_method: str = None, device: str = 'cuda', verbose: bool = False,
         logger_fl: Logger = None
 ) -> Tuple[PeftModel, PreTrainedTokenizer]:
-    cache_dir = _get_hf_cache_dir()
+    cache_dir = model_util.get_hf_cache_dir()
     logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
     if logger_fl:
         logger_fl.info(f'Loading model {model_name_or_path} with cache dir {cache_dir}... ')
@@ -101,7 +81,7 @@ def load_model_n_tokenizer(
             task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, num_virtual_tokens=20
         )
     model = get_peft_model(model, peft_config)
-    model_meta = dict(param=get_trainable_param_meta(model), size=get_model_size(model))
+    model_meta = dict(param=model_util.get_trainable_param_meta(model), size=model_util.get_model_size(model))
     if verbose:
         logger.info(f'Model info: {pl.i(model_meta)}')
         if logger_fl:
@@ -126,17 +106,6 @@ def smart_batching_collate(batch, tokenizer):
     labels[labels == tokenizer.pad_token_id] = -100
     batch_encoding['labels'] = labels
     return batch_encoding
-
-
-class ListDataset(Dataset):
-    def __init__(self, lst: List):
-        self.lst = lst
-
-    def __getitem__(self, idx):
-        return self.lst[idx]
-
-    def __len__(self):
-        return len(self.lst)
 
 
 def train_single(
@@ -256,10 +225,11 @@ def train_single(
 
 
 def load_trained(model_name_or_path: str = None) -> Tuple[PeftModel, PreTrainedTokenizer]:
-    logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(_get_hf_cache_dir())}... ')
+    cache_dir = model_util.get_hf_cache_dir()
+    logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
 
     config = PeftConfig.from_pretrained(model_name_or_path)
-    model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=_get_hf_cache_dir())
+    model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir)
     model = PeftModel.from_pretrained(model, model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
 
@@ -305,7 +275,7 @@ if __name__ == '__main__':
             output_dir = args.output_dir
 
             map_args = dict(model_name=model_name_or_path, name=output_dir, peft_approach=method)
-            out_dir_nm = map_output_dir_nm(**map_args, dataset_name=dataset_name)
+            out_dir_nm = model_util.map_output_dir_nm(**map_args, dataset_name=dataset_name)
             output_path = os_join(get_base_path(), u.proj_dir, u.model_dir, out_dir_nm)
             os.makedirs(output_path, exist_ok=True)
 
