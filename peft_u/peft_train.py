@@ -1,15 +1,16 @@
 import os
 import json
 from os.path import join as os_join
-from typing import Tuple
+from typing import Tuple, List
 from logging import Logger
 from argparse import ArgumentParser
 from functools import partial
 
 import numpy as np
 import torch
+from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-from peft import LoraConfig, TaskType, PrefixTuningConfig, get_peft_model, PeftConfig
+from peft import LoraConfig, TaskType, PrefixTuningConfig, get_peft_model, PeftConfig, PeftModel
 from transformers import (
     AutoModelForSeq2SeqLM, AutoTokenizer, Seq2SeqTrainingArguments, Seq2SeqTrainer, get_linear_schedule_with_warmup,
     PreTrainedTokenizer
@@ -18,8 +19,8 @@ from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
 from stefutil import *
-from data.utils import process_data, instructions, InputEgDataset
 from peft_u.util import *
+from peft_u.data.utils import *
 
 
 logger = get_logger('PEFT Train')
@@ -31,9 +32,12 @@ def parse_args():
     train_parser = subparsers.add_parser("train")
     test_parser = subparsers.add_parser("test")
 
-    train_parser.add_argument("--model", type=str, required=False, default="bigscience/mt0-xxl")
-    train_parser.add_argument("--data", type=str, required=True)
-    train_parser.add_argument("--task", type=str, required=True, choices=list(instructions.keys()))
+    default_md_nm = 'google/flan-t5-base'
+    dataset_names = list(sconfig('datasets'))
+
+    train_parser.add_argument("--model", type=str, required=False, default=default_md_nm)
+    train_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
+    train_parser.add_argument("--leakage", type=bool, required=False, default=False)
     train_parser.add_argument("--method", type=str, required=False, default="lora", choices=["lora", "prefix"])
     train_parser.add_argument("--batch_size", type=int, required=False, default=8)
     train_parser.add_argument("--num_epochs", type=int, required=False, default=3)
@@ -44,10 +48,12 @@ def parse_args():
     train_parser.add_argument("--output_dir", type=str, required=False, default=None)
     train_parser.add_argument('--personalize', type=bool, default=True)
 
-    test_parser.add_argument("--model", type=str, required=False, default="bigscience/mt0-xxl")
-    test_parser.add_argument("--data", type=str, required=True)
+    test_parser.add_argument("--model", type=str, required=False, default=default_md_nm)
+    test_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
+    test_parser.add_argument("--leakage", type=str, required=False, default=False)
     test_parser.add_argument("--batch_size", type=int, required=False, default=8)
     test_parser.add_argument("--output_dir", type=str, required=True)
+    test_parser.add_argument('--personalize', type=bool, default=True)
 
     return parser.parse_args()
 
@@ -66,9 +72,9 @@ def map_output_dir_nm(
 
 
 def load_model_n_tokenizer(
-        model_name_or_path: str, peft_config: PeftConfig = None, device: str = 'cuda', verbose: bool = False,
+        model_name_or_path: str, peft_method: str = None, device: str = 'cuda', verbose: bool = False,
         logger_fl: Logger = None
-) -> Tuple[torch.nn.Module, PreTrainedTokenizer]:
+) -> Tuple[PeftModel, PreTrainedTokenizer]:
     cache_dir = None
     if on_great_lakes():  # Save to scratch folder if on GL
         cache_dir = hf_custom_model_cache_dir()
@@ -81,6 +87,16 @@ def load_model_n_tokenizer(
 
     if verbose:
         logger.info('Loading Peft model...')
+
+    if peft_method == 'lora':
+        peft_config: PeftConfig = LoraConfig(
+            task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
+        )
+    else:
+        assert peft_method == 'prefix'
+        peft_config: PeftConfig = PrefixTuningConfig(
+            task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, num_virtual_tokens=20
+        )
     model = get_peft_model(model, peft_config)
     model_meta = dict(param=get_trainable_param_meta(model), size=get_model_size(model))
     if verbose:
@@ -95,17 +111,29 @@ def load_model_n_tokenizer(
 
 
 def smart_batching_collate(batch, tokenizer):
-    """Collate function for PyTorch DataLoader."""
+    """
+    Collate function for PyTorch DataLoader
+    """
     inputs = [example.process_template() for example in batch]
     targets = [example.process_target() for example in batch]
-    tokenizer.model_max_length = 512  # TODO: why not set?
-    # TODO: why truncation false?
-    batch_encoding = tokenizer(inputs, truncation=False, padding="max_length", return_tensors="pt")
-    labels = tokenizer(targets, truncation=True, padding="max_length", return_tensors="pt")
-    labels = labels["input_ids"]
+    tokenizer.model_max_length = 512
+    batch_encoding = tokenizer(inputs, truncation=True, padding='max_length', return_tensors='pt')
+    labels = tokenizer(targets, truncation=True, padding='max_length', return_tensors='pt')
+    labels = labels['input_ids']
     labels[labels == tokenizer.pad_token_id] = -100
-    batch_encoding["labels"] = labels
+    batch_encoding['labels'] = labels
     return batch_encoding
+
+
+class ListDataset(Dataset):
+    def __init__(self, lst: List):
+        self.lst = lst
+
+    def __getitem__(self, idx):
+        return self.lst[idx]
+
+    def __len__(self):
+        return len(self.lst)
 
 
 def train_single(
@@ -114,20 +142,18 @@ def train_single(
         batch_size: int = 8, num_epochs: int = 3, learning_rate: float = 2e-5, weight_decay: float = 0.01,
         output_path: str = None, verbose: bool = False
 ):
-    set_seed(seed)
-
     def _save(dir_nm: str):
         model.save_pretrained(os_join(output_path, dir_nm))
         tokenizer.save_pretrained(os_join(output_path, dir_nm))
         if verbose:
             logger.info(f'Model and tokenizer saved to {pl.i(output_path)}')
 
+    set_seed(seed)
     collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
     tr, vl, ts = dataset.train, dataset.val, dataset.test
 
-    train_dataloader = DataLoader(tr, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-    val_dataloader = DataLoader(vl, batch_size=batch_size, collate_fn=collate_fn)
-    test_dataloader = DataLoader(ts, batch_size=batch_size, collate_fn=collate_fn)
+    train_dataloader = DataLoader(ListDataset(tr), batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+    val_dataloader = DataLoader(ListDataset(vl), batch_size=batch_size, collate_fn=collate_fn)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
@@ -226,60 +252,51 @@ def train_single(
             logger_fl.info(f'Best model saved w/ eval loss {best_val_loss_}')
 
 
-if __name__ == '__main__':
-    def run_train():
-        args = parse_args()
-        if args.mode == 'train':
-            batch_size = args.batch_size
-            num_epochs = args.num_epochs
-            learning_rate = args.learning_rate
-            weight_decay = args.weight_decay
-            model_name_or_path = args.model
-            data_path = args.data
-            method = args.method
-            output_dir = args.output_dir
-            seed = args.seed
-            task = args.task
-            device = args.device
-            personalize = args.personalize
+def load_trained(model_name_or_path: str = None) -> Tuple[PeftModel, PreTrainedTokenizer]:
+    config = PeftConfig.from_pretrained(model_name_or_path)
+    model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path)
+    model = PeftModel.from_pretrained(model, model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
 
-            map_args = dict(model_name=model_name_or_path, name=output_dir, peft_approach=method, dataset_name=task)
-            output_path = os_join(get_base_path(), u.proj_dir, u.model_dir, map_output_dir_nm(**map_args))
+    if torch.cuda.is_available():
+        model = model.cuda()
+    model.eval()
+    return model, tokenizer
+
+
+if __name__ == '__main__':
+    def run():
+        args = parse_args()
+        cmd = args.mode
+        if cmd == 'train':
+            model_name_or_path, method = args.model, args.method
+            dataset_name, leakage, personalize = args.dataset_name, args.leakage, args.personalize
+            batch_size, num_epochs, learning_rate = args.batch_size, args.num_epochs, args.learning_rate
+            weight_decay = args.weight_decay
+            seed, device = args.seed, args.device
+            output_dir = args.output_dir
+
+            map_args = dict(model_name=model_name_or_path, name=output_dir, peft_approach=method)
+            out_dir_nm = map_output_dir_nm(**map_args, dataset_name=dataset_name)
+            output_path = os_join(get_base_path(), u.proj_dir, u.model_dir, out_dir_nm)
             os.makedirs(output_path, exist_ok=True)
 
             d_log = dict(
                 batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate, weight_decay=weight_decay,
-                model_name_or_path=model_name_or_path, data_path=data_path, method=method,
-                seed=seed, task=task, device=device, personalize=personalize,
+                model_name_or_path=model_name_or_path, dataset_name=dataset_name, leakage=leakage, method=method,
+                seed=seed, device=device, personalize=personalize,
                 output_dir=output_dir, output_path=output_path
             )
             logger_fl = get_logger('PEFT Train', kind='file-write', file_path=os_join(output_path, 'train.log'))
             logger.info(f'Training PEFT w/ {pl.i(d_log)}...')
             logger_fl.info(f'Training PEFT w/ {d_log}...')
 
-            if method == 'lora':
-                peft_config = LoraConfig(
-                    task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
-                )
-            else:
-                assert method == 'prefix'
-                peft_config = PrefixTuningConfig(
-                    task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, num_virtual_tokens=20
-                )
-
-            data_path = os_join(u.proj_path, 'data', data_path)
-            logger.info(f'Loading data from {pl.i(data_path)}...')
-            with open(data_path, 'r') as f:
-                data = json.load(f)
-
-            dset = process_data(data, task)
-            load_args = dict(peft_config=peft_config, device=device, logger_fl=logger_fl)
+            dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage)
+            load_args = dict(device=device, logger_fl=logger_fl, method=method)
             if personalize:
                 uids = list(dset.keys())
                 sort_fn = int if all(uid.isdigit() for uid in uids) else None
                 for uid in sorted(uids, key=sort_fn):
-                    if uid != '1':
-                        continue
                     logger.info(f'Launching personalized training for User {pl.i(uid)}...')
 
                     # reload model for each user
@@ -289,7 +306,6 @@ if __name__ == '__main__':
                         batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
                         weight_decay=weight_decay, output_path=os_join(output_path, f'User-{uid}')
                     )
-                    # raise NotImplementedError
             else:
                 model, tokenizer = load_model_n_tokenizer(model_name_or_path, **load_args, verbose=True)
                 train_single(
@@ -297,4 +313,34 @@ if __name__ == '__main__':
                     batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
                     weight_decay=weight_decay, output_path=output_path
                 )
-    run_train()
+        else:
+            assert cmd == 'test'
+            model_name_or_path = args.model
+
+            dataset_name, leakage, personalize = args.dataset_name, args.leakage, args.personalize
+            bsz = args.batch_size
+            output_dir = args.output_dir
+
+            if personalize:
+                dset = load_dataset_with_prompts(dataset_name, leakage=leakage)
+
+                model_name_or_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
+                model, tokenizer = load_trained(model_name_or_path=model_name_or_path)
+
+                collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
+                ts_dl = DataLoader(ListDataset(dset.test), batch_size=bsz, collate_fn=collate_fn)
+
+                it = tqdm(ts_dl, desc=f'Testing on {pl.i(dataset_name)}')
+                for ba in it:
+                    ba = {k: v for k, v in ba.items()}
+                    if torch.cuda.is_available():
+                        ba = {k: v.cuda() for k, v in ba.items()}
+                    with torch.no_grad():
+                        outputs = model.generate(**inputs)  # Greedy decoding
+                    decoded = tokenizer.batch_decode(outputs, skip_special_tokens=False)
+                    mic(decoded)
+                    raise NotImplementedError
+                    eval_preds.extend(decoded)
+            else:
+                raise NotImplementedError
+    run()
