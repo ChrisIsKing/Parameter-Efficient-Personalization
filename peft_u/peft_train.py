@@ -1,5 +1,4 @@
 import os
-import json
 from os.path import join as os_join
 from typing import Tuple, List
 from logging import Logger
@@ -52,7 +51,6 @@ def parse_args():
     test_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
     test_parser.add_argument("--leakage", type=str, required=False, default=False)
     test_parser.add_argument("--batch_size", type=int, required=False, default=8)
-    test_parser.add_argument("--output_dir", type=str, required=True)
     test_parser.add_argument('--personalize', type=bool, default=True)
 
     return parser.parse_args()
@@ -71,16 +69,21 @@ def map_output_dir_nm(
     return ret
 
 
+def _get_hf_cache_dir():
+    ret = None
+    if on_great_lakes():  # download to scratch folder if on GL to save space
+        ret = hf_custom_model_cache_dir()
+    return ret
+
+
 def load_model_n_tokenizer(
         model_name_or_path: str, peft_method: str = None, device: str = 'cuda', verbose: bool = False,
         logger_fl: Logger = None
 ) -> Tuple[PeftModel, PreTrainedTokenizer]:
-    cache_dir = None
-    if on_great_lakes():  # Save to scratch folder if on GL
-        cache_dir = hf_custom_model_cache_dir()
-        logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
-        if logger_fl:
-            logger_fl.info(f'Loading model {model_name_or_path} with cache dir {cache_dir}... ')
+    cache_dir = _get_hf_cache_dir()
+    logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
+    if logger_fl:
+        logger_fl.info(f'Loading model {model_name_or_path} with cache dir {cache_dir}... ')
 
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
@@ -137,7 +140,7 @@ class ListDataset(Dataset):
 
 
 def train_single(
-        model: torch.nn.Module, tokenizer: PreTrainedTokenizer, dataset: InputEgDataset,
+        model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: InputEgDataset,
         device: str = 'cuda', seed: int = 42,
         batch_size: int = 8, num_epochs: int = 3, learning_rate: float = 2e-5, weight_decay: float = 0.01,
         output_path: str = None, verbose: bool = False
@@ -253,8 +256,10 @@ def train_single(
 
 
 def load_trained(model_name_or_path: str = None) -> Tuple[PeftModel, PreTrainedTokenizer]:
+    logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(_get_hf_cache_dir())}... ')
+
     config = PeftConfig.from_pretrained(model_name_or_path)
-    model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path)
+    model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=_get_hf_cache_dir())
     model = PeftModel.from_pretrained(model, model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
 
@@ -262,6 +267,29 @@ def load_trained(model_name_or_path: str = None) -> Tuple[PeftModel, PreTrainedT
         model = model.cuda()
     model.eval()
     return model, tokenizer
+
+
+def test_single(
+        model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: InputEgDataset,
+        batch_size: int = 8
+):
+    ts = dataset.test
+    logger.info(f'Dataset test split size: {pl.i(len(ts))}')
+
+    collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
+    ts_dl = DataLoader(ListDataset(ts), batch_size=batch_size, collate_fn=collate_fn)
+
+    it = tqdm(ts_dl, desc=f'Testing... ')
+    for inputs in it:
+        inputs = {k: v for k, v in inputs.items()}
+        if torch.cuda.is_available():
+            inputs = {k: v.cuda() for k, v in inputs.items()}
+        with torch.no_grad():
+            outputs = model.generate(**inputs)  # Greedy decoding
+        decoded = tokenizer.batch_decode(outputs, skip_special_tokens=False, max_new_tokens=128)
+        mic(decoded)
+        raise NotImplementedError
+        eval_preds.extend(decoded)
 
 
 if __name__ == '__main__':
@@ -316,31 +344,26 @@ if __name__ == '__main__':
         else:
             assert cmd == 'test'
             model_name_or_path = args.model
-
             dataset_name, leakage, personalize = args.dataset_name, args.leakage, args.personalize
             bsz = args.batch_size
-            output_dir = args.output_dir
+            d_log = dict(
+                model_name_or_path=model_name_or_path, dataset_name=dataset_name, leakage=leakage,
+                personalize=personalize, batch_size=bsz
+            )
+            logger.info(f'Testing PEFT w/ {pl.i(d_log)}...')
 
             if personalize:
                 dset = load_dataset_with_prompts(dataset_name, leakage=leakage)
-
                 model_name_or_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
-                model, tokenizer = load_trained(model_name_or_path=model_name_or_path)
 
-                collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
-                ts_dl = DataLoader(ListDataset(dset.test), batch_size=bsz, collate_fn=collate_fn)
+                for uid in sorted(dset.keys()):
+                    logger.info(f'Testing personalized PEFT for User {pl.i(uid)}...')
 
-                it = tqdm(ts_dl, desc=f'Testing on {pl.i(dataset_name)}')
-                for ba in it:
-                    ba = {k: v for k, v in ba.items()}
-                    if torch.cuda.is_available():
-                        ba = {k: v.cuda() for k, v in ba.items()}
-                    with torch.no_grad():
-                        outputs = model.generate(**inputs)  # Greedy decoding
-                    decoded = tokenizer.batch_decode(outputs, skip_special_tokens=False)
-                    mic(decoded)
-                    raise NotImplementedError
-                    eval_preds.extend(decoded)
+                    path = os_join(model_name_or_path, f'User-{uid}', 'trained')
+                    assert os.path.exists(path)  # sanity check
+                    model, tokenizer = load_trained(model_name_or_path=path)
+
+                    test_single(model=model, tokenizer=tokenizer, dataset=dset[uid])
             else:
-                raise NotImplementedError
+                raise NotImplementedError('Non personalized test')
     run()
