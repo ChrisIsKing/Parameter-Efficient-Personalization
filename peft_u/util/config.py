@@ -1,5 +1,9 @@
+import json
 from os.path import join as os_join
 from stefutil import *
+
+from peft_u.util.project_paths import *
+
 
 config_dict = dict(
     datasets=dict(
@@ -93,10 +97,19 @@ config_dict = dict(
 )
 
 
-if __name__ == '__main__':
-    import json
-    from project_paths import BASE_PATH, PROJ_DIR, PKG_NM
+def add_labels(dataset_name: str = None):
+    dset_base_path = os_join(BASE_PATH, PROJ_DIR, DSET_DIR, dataset_name)
+    if dataset_name == 'goemotion':
+        with open(os_join(dset_base_path, 'ekman_mapping.json')) as f:
+            e2detailed_e = json.load(f)
+        return list(e2detailed_e.keys()) + ['neutral']
 
+
+d_dset = config_dict['datasets']
+d_dset['goemotion']['labels'] = add_labels('goemotion')
+
+
+if __name__ == '__main__':
     mic.output_width = 256
 
     fl_nm = 'config.json'
