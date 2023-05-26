@@ -1,9 +1,8 @@
 import json
 import random
 from os.path import join as os_join
-
+from typing import List, Dict, Union, Any
 from dataclasses import dataclass
-from typing import List, Dict, Union
 
 from torch.utils.data import Dataset
 
@@ -14,7 +13,7 @@ from peft_u.preprocess.convert_data_format import PersonalizedDataset
 
 __all__ = [
     'InputEgDataset', 'ListDataset',
-    'load_dataset_with_prompts'
+    'load_dataset_with_prompts', 'iter_users'
 ]
 
 
@@ -145,6 +144,15 @@ def load_dataset_with_prompts(
             val=sum([dset.val for dset in ret.values()], start=[]),
             test=sum([dset.test for dset in ret.values()], start=[])
         )
+
+
+def iter_users(dataset: Dict[str, Any]):
+    """
+    Deterministic ordering  of user ids
+    """
+    uids = list(dataset.keys())
+    sort_fn = int if all(uid.isdigit() for uid in uids) else None
+    return sorted(uids, key=sort_fn)
 
 
 if __name__ == '__main__':
