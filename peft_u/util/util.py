@@ -11,16 +11,13 @@ from peft_u.util.project_paths import BASE_PATH, PROJ_DIR, PKG_NM, DSET_DIR, MOD
 
 __all__ = [
     'sconfig', 'u', 'save_fig',
-    'set_seed', 'flip_dict_of_lists',
+    'set_seed',
     'on_great_lakes', 'get_base_path',
-
 ]
 
 
 sconfig = StefConfig(config_file=os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', 'config.json')).__call__
 u = StefUtil(base_path=BASE_PATH, project_dir=PROJ_DIR, package_name=PKG_NM, dataset_dir=DSET_DIR, model_dir=MODEL_DIR)
-u.tokenizer_path = os_join(u.base_path, u.proj_dir, 'tokenizers')
-os.makedirs(u.tokenizer_path, exist_ok=True)
 save_fig = u.save_fig
 
 
@@ -31,13 +28,6 @@ def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(0)
-
-
-def flip_dict_of_lists(d):
-    """
-    Flip a dictionary of lists.
-    """
-    return {v: k for k, values in d.items() for v in values}
 
 
 def get_current_directory():

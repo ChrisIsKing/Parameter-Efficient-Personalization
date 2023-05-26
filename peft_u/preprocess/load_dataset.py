@@ -44,7 +44,7 @@ class InputExample:
     def process_target(self):
         if len(self.label) == 1:
             return self.label[0]
-        return ','.join(self.label)
+        return ', '.join(self.label)
 
     def __repr__(self):
         return f"InputExample(guid={self.guid}, instruction={self.instruction}, text={self.text}, " \

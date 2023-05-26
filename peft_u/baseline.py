@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 from functools import partial
 
 import numpy as np
+import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from peft import LoraConfig, TaskType, PrefixTuningConfig, get_peft_model, PeftConfig, PeftModel
@@ -15,6 +16,7 @@ from transformers import (
 )
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+from sklearn.metrics import classification_report
 
 from stefutil import *
 from peft_u.util import *
@@ -67,6 +69,7 @@ def load_model_n_tokenizer(
 
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    tokenizer.model_max_length = 512
 
     if verbose:
         logger.info('Loading Peft model...')
@@ -99,7 +102,8 @@ def smart_batching_collate(batch, tokenizer):
     """
     inputs = [example.process_template() for example in batch]
     targets = [example.process_target() for example in batch]
-    tokenizer.model_max_length = 512
+    # mic(inputs, targets)
+    # raise NotImplementedError
     batch_encoding = tokenizer(inputs, truncation=True, padding='max_length', return_tensors='pt')
     labels = tokenizer(targets, truncation=True, padding='max_length', return_tensors='pt')
     labels = labels['input_ids']
@@ -240,26 +244,51 @@ def load_trained(model_name_or_path: str = None) -> Tuple[PeftModel, PreTrainedT
 
 
 def test_single(
-        model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: InputEgDataset,
+        model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: ListDataset = None, dataset_name: str = None,
         batch_size: int = 8
 ):
-    ts = dataset.test
-    logger.info(f'Dataset test split size: {pl.i(len(ts))}')
+    label_options = sconfig(f'datasets.{dataset_name}.labels')
+    lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
+    n_sample = len(dataset)
+    # logger.info(f'Testing on Dataset {pl.i(dataset_name)} w/ test split size: {pl.i(n_sample)}')
 
     collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
-    ts_dl = DataLoader(ListDataset(ts), batch_size=batch_size, collate_fn=collate_fn)
+    ts_dl = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn)
 
+    trues, preds = np.empty(n_sample, dtype=int), np.empty(n_sample, dtype=int)
     it = tqdm(ts_dl, desc=f'Testing... ')
-    for inputs in it:
+
+    df = None
+    n_ba = len(ts_dl)
+    for i_ba, inputs in enumerate(it):
         inputs = {k: v for k, v in inputs.items()}
+        inputs.pop('labels')
         if torch.cuda.is_available():
             inputs = {k: v.cuda() for k, v in inputs.items()}
         with torch.no_grad():
             outputs = model.generate(**inputs)  # Greedy decoding
-        decoded = tokenizer.batch_decode(outputs, skip_special_tokens=False, max_new_tokens=128)
-        mic(decoded)
-        raise NotImplementedError
-        eval_preds.extend(decoded)
+        lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True, max_new_tokens=128)
+
+        for i, decoded in enumerate(lst_decoded):
+            i_sample = i_ba * batch_size + i
+            labels = dataset[i_sample].process_target()
+            labels = labels.split(',')
+            assert ',' not in decoded  # sanity check only one label generated
+
+            preds[i_sample] = lb2id[decoded]
+            # default to first label if prediction wrong
+            trues[i_sample] = lb2id[decoded] if decoded in labels else lb2id[labels[0]]
+
+        if i_ba + 1 == n_ba:
+            args = dict(
+                labels=list(range(len(label_options))), target_names=label_options, zero_division=0, output_dict=True
+            )
+            df, acc = eval_array2report_df(labels=trues, preds=preds, report_args=args)
+            # report = classification_report(y_true=trues, y_pred=preds, **args)
+            # mic(report)
+            # acc = f'{report["accuracy"]:.3f}'
+            it.set_postfix(cls_acc=acc)
+    return df
 
 
 if __name__ == '__main__':
@@ -290,7 +319,7 @@ if __name__ == '__main__':
             logger_fl.info(f'Training PEFT w/ {d_log}...')
 
             dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage)
-            load_args = dict(device=device, logger_fl=logger_fl, method=method)
+            load_args = dict(peft_method=method, device=device, logger_fl=logger_fl)
             if personalize:
                 uids = list(dset.keys())
                 sort_fn = int if all(uid.isdigit() for uid in uids) else None
@@ -316,6 +345,11 @@ if __name__ == '__main__':
             model_name_or_path = args.model
             dataset_name, leakage, personalize = args.dataset_name, args.leakage, args.personalize
             bsz = args.batch_size
+
+            date = now(fmt='short-date')
+            eval_output_path = os_join(u.eval_path, f'{model_name_or_path}_Eval-{date}')
+            os.makedirs(eval_output_path, exist_ok=True)
+
             d_log = dict(
                 model_name_or_path=model_name_or_path, dataset_name=dataset_name, leakage=leakage,
                 personalize=personalize, batch_size=bsz
@@ -327,13 +361,20 @@ if __name__ == '__main__':
                 model_name_or_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
 
                 for uid in sorted(dset.keys()):
-                    logger.info(f'Testing personalized PEFT for User {pl.i(uid)}...')
+                    ts = ListDataset(dset[uid].test)
+                    logger.info(f'Testing personalized PEFT for User {pl.i(uid)} w/ test split size {pl.i(len(ts))}...')
 
-                    path = os_join(model_name_or_path, f'User-{uid}', 'trained')
+                    user_str = f'User-{uid}'
+                    path = os_join(model_name_or_path, user_str, 'trained')
                     assert os.path.exists(path)  # sanity check
                     model, tokenizer = load_trained(model_name_or_path=path)
 
-                    test_single(model=model, tokenizer=tokenizer, dataset=dset[uid])
+                    df = test_single(
+                        model=model, tokenizer=tokenizer, dataset=ts, batch_size=bsz,
+                        dataset_name=dataset_name,
+                    )
+                    path = os_join(eval_output_path, f'{user_str}.csv')
+                    df.to_csv(path)
             else:
                 raise NotImplementedError('Non personalized test')
     run()

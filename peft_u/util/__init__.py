@@ -1,2 +1,2 @@
 from .util import *
-from . import model
+from . import models
