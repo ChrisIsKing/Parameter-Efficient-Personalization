@@ -82,7 +82,7 @@ def _load_dataset(dataset_name: str = None, leakage: bool = False) -> Personaliz
 
 def load_dataset_with_prompts(
         dataset_name: str, leakage: bool = False,
-        example_count: int = 1, max_example_count: int = 3, per_user: bool = True
+        example_count: int = 1, max_example_count: int = 3, per_user: bool = True, seed: int = 42
 ) -> Union[InputEgDataset, Dict[str, InputEgDataset]]:
     """
     Process data for few-shot learning
@@ -93,6 +93,7 @@ def load_dataset_with_prompts(
     :param example_count: number of examples in few-shot prompt, per category
     :param max_example_count: maximum number of examples to use per category
     :param per_user: If True, return datasets for each user
+    :param seed: random seed for sampling prompt examples
     """
     ret = dict()
     instruction = sconfig(f'datasets.{dataset_name}.instruction')
@@ -116,16 +117,23 @@ def load_dataset_with_prompts(
             """
             Add prompt example to each sample in the split
             """
+            if seed:
+                random.seed(seed)
             lst = []
             for sid, sample in dset_[split].items():
                 text, label = sample['text'], sample['label']
 
                 # take n random examples from each category for few-shot prompt
-                prompt_egs = [  # TODO: possible to select the exact same `text` in the prompt?
-                    [(txt, lb) for txt in random.sample(lb2txts[lb], k=min(example_count, len(lb2txts[lb])))]
-                    for lb in label_options
-                ]
-                prompt_egs = sum(prompt_egs, start=[])[:max_example_count]
+                prompt_egs = []
+                for lb in label_options:
+                    if split == 'train' and label == lb:  # filter out current sample if in train split
+                        idx_curr_sample = lb2txts[lb].index(text)
+                        txts = lb2txts[lb][:idx_curr_sample] + lb2txts[lb][idx_curr_sample+1:]
+                    else:
+                        txts = lb2txts[lb]
+                    txts_selected = random.sample(txts, k=min(example_count, len(txts)))
+                    prompt_egs += [(txt, lb) for txt in txts_selected]
+                prompt_egs = prompt_egs[:max_example_count]  # keep only first `max_example_count` examples
 
                 lst.append(
                     InputExample(guid=sid, instruction=instruction, text=text, prompt_examples=prompt_egs, label=label)

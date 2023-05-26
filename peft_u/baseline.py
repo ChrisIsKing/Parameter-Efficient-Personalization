@@ -40,13 +40,13 @@ def parse_args():
     train_parser.add_argument("--leakage", type=bool, required=False, default=False)
     train_parser.add_argument("--method", type=str, required=False, default="lora", choices=["lora", "prefix"])
     train_parser.add_argument("--batch_size", type=int, required=False, default=8)
-    train_parser.add_argument("--num_epochs", type=int, required=False, default=3)
+    train_parser.add_argument("--num_epochs", type=int, required=False, default=8)
     train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
     train_parser.add_argument("--weight_decay", type=float, required=False, default=0.01)
     train_parser.add_argument("--seed", type=int, required=False, default=42)
     train_parser.add_argument("--device", type=str, required=False, default="cuda")
     train_parser.add_argument("--output_dir", type=str, required=False, default=None)
-    train_parser.add_argument('--personalize', type=bool, default=True)
+    train_parser.add_argument('--personalize', type=bool, required=False, default=True)
 
     test_parser.add_argument("--model", type=str, required=False, default=default_md_nm)
     test_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
@@ -205,7 +205,12 @@ def train_single(
                 n_correct = 0  # Eval classification accuracy
                 n = 0
                 for pred, true in zip(eval_preds, vl):
-                    if pred.strip() == true.process_target().strip():
+                    # by empirical observation, the forward-pass tensors seems to repeat the single prediction label
+                    #  => an easy solution is just consider the first word as prediction;
+                    #  TODO: better & still fast ways?
+                    pred = pred.split(' ')[0].strip()
+                    labels = [lb.strip() for lb in true.process_target().split(', ')]
+                    if pred in labels:
                         n_correct += 1
                     n += 1
 
@@ -224,7 +229,8 @@ def train_single(
             _save('trained')
 
             best_val_loss_ = round(best_val_loss, 4)
-            logger.info(f'Best model saved w/ eval loss {pl.i(best_val_loss_)}')
+            if verbose:
+                logger.info(f'Best model saved w/ eval loss {pl.i(best_val_loss_)}')
             logger_fl.info(f'Best model saved w/ eval loss {best_val_loss_}')
 
 
@@ -327,9 +333,15 @@ if __name__ == '__main__':
 
             dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage)
             load_args = dict(peft_method=method, device=device, logger_fl=logger_fl)
+
+            tm = Timer()
             if personalize:
                 for uid in iter_users(dset):
+                    if uid != '1':  # TODO: debugging
+                        continue
+
                     logger.info(f'Launching personalized training for User {pl.i(uid)}...')
+                    tm_ = Timer()
 
                     # reload model for each user
                     model, tokenizer = load_model_n_tokenizer(model_name_or_path, **load_args)
@@ -338,6 +350,9 @@ if __name__ == '__main__':
                         batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
                         weight_decay=weight_decay, output_path=os_join(output_path, f'User-{uid}')
                     )
+                    t_e_ = tm_.end()
+                    logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
+                    logger_fl.info(f'Training for User {uid} done in {t_e_}')
             else:
                 model, tokenizer = load_model_n_tokenizer(model_name_or_path, **load_args, verbose=True)
                 train_single(
@@ -345,6 +360,9 @@ if __name__ == '__main__':
                     batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
                     weight_decay=weight_decay, output_path=output_path
                 )
+            t_e = tm.end()
+            logger.info(f'Training done in {pl.i(t_e)}')
+            logger_fl.info(f'Training done in {t_e}')
         else:
             assert cmd == 'test'
             model_name_or_path = args.model
