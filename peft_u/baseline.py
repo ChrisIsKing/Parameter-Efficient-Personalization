@@ -16,7 +16,6 @@ from transformers import (
 )
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-from sklearn.metrics import classification_report
 
 from stefutil import *
 from peft_u.util import *
@@ -63,9 +62,10 @@ def load_model_n_tokenizer(
         logger_fl: Logger = None
 ) -> Tuple[PeftModel, PreTrainedTokenizer]:
     cache_dir = model_util.get_hf_cache_dir()
-    logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
-    if logger_fl:
-        logger_fl.info(f'Loading model {model_name_or_path} with cache dir {cache_dir}... ')
+    if verbose:
+        logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
+        if logger_fl:
+            logger_fl.info(f'Loading model {model_name_or_path} with cache dir {cache_dir}... ')
 
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
@@ -228,9 +228,10 @@ def train_single(
             logger_fl.info(f'Best model saved w/ eval loss {best_val_loss_}')
 
 
-def load_trained(model_name_or_path: str = None) -> Tuple[PeftModel, PreTrainedTokenizer]:
+def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple[PeftModel, PreTrainedTokenizer]:
     cache_dir = model_util.get_hf_cache_dir()
-    logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
+    if verbose:
+        logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
 
     config = PeftConfig.from_pretrained(model_name_or_path)
     model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir)
@@ -245,20 +246,21 @@ def load_trained(model_name_or_path: str = None) -> Tuple[PeftModel, PreTrainedT
 
 def test_single(
         model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: ListDataset = None, dataset_name: str = None,
-        batch_size: int = 8
-):
+        batch_size: int = 8, user_id: str = None
+) -> Tuple[pd.DataFrame, float]:
     label_options = sconfig(f'datasets.{dataset_name}.labels')
     lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
     n_sample = len(dataset)
-    # logger.info(f'Testing on Dataset {pl.i(dataset_name)} w/ test split size: {pl.i(n_sample)}')
 
     collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
     ts_dl = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn)
 
     trues, preds = np.empty(n_sample, dtype=int), np.empty(n_sample, dtype=int)
-    it = tqdm(ts_dl, desc=f'Testing... ')
+    it = tqdm(ts_dl, desc=f'Testing on User {pl.i(user_id)}... ' if user_id else 'Testing... ')
+    d_it = dict(dataset_size=pl.i(len(dataset)))
+    it.set_postfix(d_it)
 
-    df = None
+    ret = None
     n_ba = len(ts_dl)
     for i_ba, inputs in enumerate(it):
         inputs = {k: v for k, v in inputs.items()}
@@ -266,29 +268,34 @@ def test_single(
         if torch.cuda.is_available():
             inputs = {k: v.cuda() for k, v in inputs.items()}
         with torch.no_grad():
-            outputs = model.generate(**inputs)  # Greedy decoding
-        lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True, max_new_tokens=128)
+            outputs = model.generate(**inputs, max_new_tokens=128)  # Greedy decoding
+        lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
         for i, decoded in enumerate(lst_decoded):
             i_sample = i_ba * batch_size + i
             labels = dataset[i_sample].process_target()
-            labels = labels.split(',')
-            assert ',' not in decoded  # sanity check only one label generated
+            labels = labels.split(', ')  # See `peft_u.preprocess.load_dataset::InputExample.process_target`
+            # model may generate multiple labels; enforce an easier requirement by allowing no whitespace between labels
+            decoded = [d.strip() for d in decoded.split(',')]
 
-            preds[i_sample] = lb2id[decoded]
-            # default to first label if prediction wrong
-            trues[i_sample] = lb2id[decoded] if decoded in labels else lb2id[labels[0]]
+            correct = False
+            for dec in decoded:
+                if dec in labels:  # predicts one of the correct label, declare correct; TODO: discuss
+                    preds[i_sample] = trues[i_sample] = lb2id[dec]
+                    correct = True
+                    break
+            if not correct:  # if prediction wrong, default to first label arbitrarily
+                trues[i_sample] = lb2id[labels[0]]
+                preds[i_sample] = lb2id[decoded[0]]
 
-        if i_ba + 1 == n_ba:
-            args = dict(
-                labels=list(range(len(label_options))), target_names=label_options, zero_division=0, output_dict=True
-            )
-            df, acc = eval_array2report_df(labels=trues, preds=preds, report_args=args)
-            # report = classification_report(y_true=trues, y_pred=preds, **args)
-            # mic(report)
-            # acc = f'{report["accuracy"]:.3f}'
-            it.set_postfix(cls_acc=acc)
-    return df
+        if i_ba + 1 == n_ba:  # last iteration
+            idx_lbs = list(range(len(label_options)))
+            args = dict(labels=idx_lbs, target_names=label_options, zero_division=0, output_dict=True)
+            ret = df, acc = eval_array2report_df(labels=trues, preds=preds, report_args=args, pretty=False)
+            acc_str = f'{acc*100:.1f}'
+            d_it['cls_acc'] = pl.i(acc_str)
+            it.set_postfix(d_it)
+    return ret
 
 
 if __name__ == '__main__':
@@ -321,9 +328,7 @@ if __name__ == '__main__':
             dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage)
             load_args = dict(peft_method=method, device=device, logger_fl=logger_fl)
             if personalize:
-                uids = list(dset.keys())
-                sort_fn = int if all(uid.isdigit() for uid in uids) else None
-                for uid in sorted(uids, key=sort_fn):
+                for uid in iter_users(dset):
                     logger.info(f'Launching personalized training for User {pl.i(uid)}...')
 
                     # reload model for each user
@@ -360,21 +365,27 @@ if __name__ == '__main__':
                 dset = load_dataset_with_prompts(dataset_name, leakage=leakage)
                 model_name_or_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
 
-                for uid in sorted(dset.keys()):
+                accs = []
+
+                for uid in iter_users(dset):
                     ts = ListDataset(dset[uid].test)
-                    logger.info(f'Testing personalized PEFT for User {pl.i(uid)} w/ test split size {pl.i(len(ts))}...')
+                    # logger.info(f'Testing personalized PEFT for User {pl.i(uid)} w/ test split size {pl.i(len(ts))}...')
 
                     user_str = f'User-{uid}'
                     path = os_join(model_name_or_path, user_str, 'trained')
                     assert os.path.exists(path)  # sanity check
                     model, tokenizer = load_trained(model_name_or_path=path)
 
-                    df = test_single(
+                    df, acc = test_single(
                         model=model, tokenizer=tokenizer, dataset=ts, batch_size=bsz,
-                        dataset_name=dataset_name,
+                        dataset_name=dataset_name, user_id=uid
                     )
                     path = os_join(eval_output_path, f'{user_str}.csv')
                     df.to_csv(path)
+
+                    accs.append(acc)
+                acc_avg = np.mean(accs)
+                logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg*100)}')
             else:
                 raise NotImplementedError('Non personalized test')
     run()

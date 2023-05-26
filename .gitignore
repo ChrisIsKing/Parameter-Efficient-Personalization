@@ -7,3 +7,4 @@ __MACOSX
 .vscode
 results
 models/
+test-lang.py
