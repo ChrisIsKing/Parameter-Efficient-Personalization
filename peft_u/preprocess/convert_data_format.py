@@ -3,7 +3,7 @@ import json
 import random
 from os.path import join as os_join
 from typing import Tuple, List, Dict, Union, Any
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 import nltk
 from nltk.metrics.distance import masi_distance
@@ -41,114 +41,6 @@ def load_csv(path, delimiter=",", header=True):
         for row in reader:
             data.append(row)
     return data, header
-
-
-def most_common(lst, tie_breaker=None):
-    """
-    Returns the most common element in a list.
-    If the count of the top 2 elements are the same then  tie_breaker is returned.
-    """
-    data = Counter(lst)
-    top_2 = data.most_common(2)
-    if len(top_2) > 1:
-        if top_2[0][1] == top_2[1][1]:
-            return tie_breaker
-    return top_2[0][0]
-
-
-def prepare_data(data, train_split, test_ids=None, random_state=42):
-    """
-    Prepare hatexplain data.
-    """
-    set_seed(random_state)
-    ruleset = {}
-    normal_examples = {}
-    global_examples = {"all": {}, "train": {}, "test": {}, "val": {}}
-
-    for k, v in data.items():
-        label = most_common(lst=[annotator['label'] for annotator in v['annotators']], tie_breaker="undecided")
-        group = [
-            item for item, count in
-            Counter([group for annotator in v['annotators'] for group in annotator['target']]).items() if count > 1
-        ]
-        if not group:
-            group = ["None"]
-        post_text = " ".join(v['post_tokens'])
-        if label == "normal":
-            v['majority_label'] = ["normal"]
-            v['text'] = post_text
-            v['majority_group'] = group
-            normal_examples[k] = v
-            v['rationale_spans'] = []
-            if test_ids:
-                if v['post_id'] in test_ids["train"]:
-                    global_examples["train"][k] = v
-                elif v['post_id'] in test_ids["test"]:
-                    global_examples["test"][k] = v
-                elif v['post_id'] in test_ids["val"]:
-                    global_examples["val"][k] = v
-        elif label != "undecided":
-            global_examples["all"][k] = v
-            global_examples["all"][k]['majority_label'] = [label]
-            global_examples["all"][k]['text'] = post_text
-            global_examples["all"][k]['rationale_spans'] = []
-            global_examples["all"][k]['majority_group'] = group
-        for index, annotator in enumerate(v['annotators']):
-            if annotator['annotator_id'] not in ruleset:
-                ruleset[annotator['annotator_id']] = {}
-            if v['rationales']:
-                if len(v['rationales']) <= index:
-                    ruleset[annotator['annotator_id']][v['post_id']] = {
-                        'post_tokens': v['post_tokens'],
-                        'text': post_text,
-                        'rationale': [],
-                        'label': v['annotators'][index]['label'],
-                        'target_group': v['annotators'][index]['target'],
-                        'rationale_tokens': [],
-                        'rationale_spans': [],
-                        'majority_label': [label],
-                        'majority_group': group
-                    }
-                else:
-                    ruleset[annotator['annotator_id']][v['post_id']] = {
-                        'post_tokens': v['post_tokens'],
-                        'text': post_text,
-                        'rationale': v['rationales'][index],
-                        'label': v['annotators'][index]['label'],
-                        'target_group': v['annotators'][index]['target'],
-                        'rationale_tokens': [token for i, token in enumerate(v['post_tokens']) if
-                                             v['rationales'][index][i] == 1],
-                        'rationale_spans': [],
-                        'majority_label': [label],
-                        'majority_group': group
-                    }
-                    queue = []
-                    for flag, value in zip(v['rationales'][index], v['post_tokens']):
-                        if flag:
-                            queue.append(value)
-                        elif queue:
-                            rationale = " ".join(queue)
-                            ruleset[annotator['annotator_id']][v['post_id']]['rationale_spans'].append(rationale)
-                            global_examples["all"][k]['rationale_spans'].append(rationale)
-                            queue = []
-                    if queue:
-                        rationale = " ".join(queue)
-                        ruleset[annotator['annotator_id']][v['post_id']]['rationale_spans'].append(rationale)
-                        global_examples["all"][k]['rationale_spans'].append(rationale)
-            else:
-                ruleset[annotator['annotator_id']][v['post_id']] = {
-                    'post_tokens': v['post_tokens'],
-                    'text': post_text,
-                    'rationale': [],
-                    'label': v['annotators'][index]['label'],
-                    'target_group': v['annotators'][index]['target'],
-                    'rationale_tokens': [],
-                    'rationale_spans': [],
-                    'majority_label': [label],
-                    'majority_group': group
-                }
-
-    return ruleset, normal_examples, global_examples
 
 
 def _split2train_val_test(samples: List = None, train_split_ratio: float = 0.8, seed: int = 42):
@@ -245,8 +137,8 @@ def save_datasets(data: PersonalizedData = None, base_path: str = None):
     num_annotators = len(data)
     num_examples = sum([len(v) for k, v in data.items()])
 
-    user_data_leaked, agreement_data = data2dataset_splits(data, 0.8, seed=42, leakage=True)
-    user_data_no_leak, agreement_data_ = data2dataset_splits(data, 0.8, seed=42, leakage=False)
+    user_data_leaked, agreement_data = data2dataset_splits(data, train_split_ratio=0.8, seed=42, leakage=True)
+    user_data_no_leak, agreement_data_ = data2dataset_splits(data, train_split_ratio=0.8, seed=42, leakage=False)
     assert set(agreement_data) == set(agreement_data_)  # sanity check
 
     masi_task = nltk.AnnotationTask(distance=masi_distance)
