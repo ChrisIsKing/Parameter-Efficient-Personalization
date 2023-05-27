@@ -102,14 +102,17 @@ def smart_batching_collate(batch, tokenizer):
     """
     inputs = [example.process_template() for example in batch]
     targets = [example.process_target() for example in batch]
-    # mic(inputs, targets)
-    # raise NotImplementedError
     batch_encoding = tokenizer(inputs, truncation=True, padding='max_length', return_tensors='pt')
     labels = tokenizer(targets, truncation=True, padding='max_length', return_tensors='pt')
     labels = labels['input_ids']
     labels[labels == tokenizer.pad_token_id] = -100
     batch_encoding['labels'] = labels
     return batch_encoding
+
+
+def _get_dataset_sizes(dataset: InputEgDataset):
+    tr, vl, ts = dataset.train, dataset.val, dataset.test
+    return dict(train_sz=len(tr), val_sz=len(vl), test_sz=len(ts))
 
 
 def train_single(
@@ -143,8 +146,9 @@ def train_single(
 
     logger_fl = get_logger('PEFT Train', kind='file-write', file_path=os_join(output_path, 'train.log'))
     tb_writer = SummaryWriter(os_join(output_path, f'tensorboard'))
-    d_log = dict(train=len(tr), val=len(vl), test=len(ts))
-    logger.info(f'Dataset sizes: {pl.i(d_log)}')
+    d_log = _get_dataset_sizes(dataset)
+    if verbose:
+        logger.info(f'Dataset sizes: {pl.i(d_log)}')
     logger_fl.info(f'Dataset sizes: {d_log}')
 
     pret = MlPrettier(ref=dict(step=n_step_per_epoch, epoch=num_epochs), metric_keys=['cls_acc'])
@@ -252,7 +256,7 @@ def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple
 
 def test_single(
         model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: ListDataset = None, dataset_name: str = None,
-        batch_size: int = 8, user_id: str = None
+        batch_size: int = 8, tqdm_desc: str = None
 ) -> Tuple[pd.DataFrame, float]:
     label_options = sconfig(f'datasets.{dataset_name}.labels')
     lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
@@ -262,7 +266,7 @@ def test_single(
     ts_dl = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn)
 
     trues, preds = np.empty(n_sample, dtype=int), np.empty(n_sample, dtype=int)
-    it = tqdm(ts_dl, desc=f'Testing on User {pl.i(user_id)}... ' if user_id else 'Testing... ')
+    it = tqdm(ts_dl, desc=tqdm_desc or 'Testing... ')
     d_it = dict(dataset_size=pl.i(len(dataset)))
     it.set_postfix(d_it)
 
@@ -336,11 +340,21 @@ if __name__ == '__main__':
 
             tm = Timer()
             if personalize:
-                for uid in iter_users(dset):
-                    if uid != '1':  # TODO: debugging
-                        continue
+                # global_tqdm = True
+                global_tqdm = False
+                it = iter_users(dset)
+                if global_tqdm:
+                    it = tqdm(it, desc=f'Training on {pl.i(dataset_name)}')
 
-                    logger.info(f'Launching personalized training for User {pl.i(uid)}...')
+                for i, uid in enumerate(it, start=1):
+                    # if uid != '1':  # TODO: debugging
+                    #     continue
+                    if global_tqdm:
+                        d_log = dict(user=uid) | _get_dataset_sizes(dset[uid])
+                        it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
+                    else:
+                        user_ordinal = f'{pl.i(i)}/{pl.i(len(dset))}'
+                        logger.info(f'Launching personalized training for User {pl.i(uid)}({user_ordinal})...')
                     tm_ = Timer()
 
                     # reload model for each user
@@ -351,7 +365,8 @@ if __name__ == '__main__':
                         weight_decay=weight_decay, output_path=os_join(output_path, f'User-{uid}')
                     )
                     t_e_ = tm_.end()
-                    logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
+                    if not global_tqdm:
+                        logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
                     logger_fl.info(f'Training for User {uid} done in {t_e_}')
             else:
                 model, tokenizer = load_model_n_tokenizer(model_name_or_path, **load_args, verbose=True)
@@ -385,9 +400,11 @@ if __name__ == '__main__':
 
                 accs = []
 
-                for uid in iter_users(dset):
+                for i, uid in enumerate(iter_users(dset), start=1):
                     ts = ListDataset(dset[uid].test)
                     # logger.info(f'Testing personalized PEFT for User {pl.i(uid)} w/ test split size {pl.i(len(ts))}...')
+                    user_ordinal = f'{pl.i(i)}/{pl.i(len(dset))}'
+                    desc = f'Testing on User {pl.i(uid)}({user_ordinal})... '
 
                     user_str = f'User-{uid}'
                     path = os_join(model_name_or_path, user_str, 'trained')
@@ -396,7 +413,7 @@ if __name__ == '__main__':
 
                     df, acc = test_single(
                         model=model, tokenizer=tokenizer, dataset=ts, batch_size=bsz,
-                        dataset_name=dataset_name, user_id=uid
+                        dataset_name=dataset_name, tqdm_desc=desc
                     )
                     path = os_join(eval_output_path, f'{user_str}.csv')
                     df.to_csv(path)

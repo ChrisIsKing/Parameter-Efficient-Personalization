@@ -1,38 +1,131 @@
-from utils import *
 import json
-import numpy as np
-import nltk
-from nltk.metrics.distance import masi_distance
+from os.path import join as os_join
+from collections import Counter
 
-label_map = {"normal": 0, "hatespeech": 1, "offensive": 2}
+from peft_u.util import *
+from peft_u.preprocess.convert_data_format import *
 
-# Load HateXplain dataset
-dir = get_current_directory()
-data = json.load(open(dir+'/hatexplain/dataset.json'))
-test_ids = json.load(open(dir+'/hatexplain/post_id_divisions.json'))
 
-# Prepare data for training
-train_split = 0.8
-user_data, normal_examples, global_examples = prepare_data(data, train_split, test_ids)
+def _most_common(lst, tie_breaker: str = None):
+    """
+    Returns the most common element in a list.
+    If the count of the top 2 elements are the same then `tie_breaker` is returned.
+    """
+    c = Counter(lst)
+    top_2 = c.most_common(2)
+    if len(top_2) > 1:
+        if top_2[0][1] == top_2[1][1]:
+            return tie_breaker
+    return top_2[0][0]
 
-num_annotators = len(user_data)
-num_examples = sum([len(v) for k, v in user_data.items()])
 
-user_data_leaked, agreement_data = data2dataset_splits(user_data, 0.8, seed=42, leakage=True)
-user_data_no_leak, agreement_data = data2dataset_splits(user_data, 0.8, seed=42, leakage=False)
+def prepare_data(data, test_ids=None, random_state=42):
+    """
+    Prepare hatexplain data.
+    """
+    set_seed(random_state)
+    ruleset = {}
+    normal_examples = {}
+    global_examples = {"all": {}, "train": {}, "test": {}, "val": {}}
 
-masi_task = nltk.AnnotationTask(distance=masi_distance)
-masi_task.load_array(agreement_data)
-print("Krippendorff's alpha: {}".format(masi_task.alpha()))
-print("Number of Users: {}".format(num_annotators))
-print("Number of Examples: {}".format(num_examples))
-print("Average number of examples per user: {}".format(num_examples/num_annotators))
-print("Average number of users per example: {}".format(avg_num_users_per_example(user_data)))
+    for k, v in data.items():
+        label = _most_common(lst=[annotator['label'] for annotator in v['annotators']], tie_breaker="undecided")
+        group = [
+            item for item, count in
+            Counter([group for annotator in v['annotators'] for group in annotator['target']]).items() if count > 1
+        ]
+        if not group:
+            group = ["None"]
+        post_text = " ".join(v['post_tokens'])
+        if label == "normal":
+            v['majority_label'] = ["normal"]
+            v['text'] = post_text
+            v['majority_group'] = group
+            normal_examples[k] = v
+            v['rationale_spans'] = []
+            if test_ids:
+                if v['post_id'] in test_ids["train"]:
+                    global_examples["train"][k] = v
+                elif v['post_id'] in test_ids["test"]:
+                    global_examples["test"][k] = v
+                elif v['post_id'] in test_ids["val"]:
+                    global_examples["val"][k] = v
+        elif label != "undecided":
+            global_examples["all"][k] = v
+            global_examples["all"][k]['majority_label'] = [label]
+            global_examples["all"][k]['text'] = post_text
+            global_examples["all"][k]['rationale_spans'] = []
+            global_examples["all"][k]['majority_group'] = group
+        for index, annotator in enumerate(v['annotators']):
+            if annotator['annotator_id'] not in ruleset:
+                ruleset[annotator['annotator_id']] = {}
+            if v['rationales']:
+                if len(v['rationales']) <= index:
+                    ruleset[annotator['annotator_id']][v['post_id']] = {
+                        'post_tokens': v['post_tokens'],
+                        'text': post_text,
+                        'rationale': [],
+                        'label': v['annotators'][index]['label'],
+                        'target_group': v['annotators'][index]['target'],
+                        'rationale_tokens': [],
+                        'rationale_spans': [],
+                        'majority_label': [label],
+                        'majority_group': group
+                    }
+                else:
+                    ruleset[annotator['annotator_id']][v['post_id']] = {
+                        'post_tokens': v['post_tokens'],
+                        'text': post_text,
+                        'rationale': v['rationales'][index],
+                        'label': v['annotators'][index]['label'],
+                        'target_group': v['annotators'][index]['target'],
+                        'rationale_tokens': [token for i, token in enumerate(v['post_tokens']) if
+                                             v['rationales'][index][i] == 1],
+                        'rationale_spans': [],
+                        'majority_label': [label],
+                        'majority_group': group
+                    }
+                    queue = []
+                    for flag, value in zip(v['rationales'][index], v['post_tokens']):
+                        if flag:
+                            queue.append(value)
+                        elif queue:
+                            rationale = " ".join(queue)
+                            ruleset[annotator['annotator_id']][v['post_id']]['rationale_spans'].append(rationale)
+                            global_examples["all"][k]['rationale_spans'].append(rationale)
+                            queue = []
+                    if queue:
+                        rationale = " ".join(queue)
+                        ruleset[annotator['annotator_id']][v['post_id']]['rationale_spans'].append(rationale)
+                        global_examples["all"][k]['rationale_spans'].append(rationale)
+            else:
+                ruleset[annotator['annotator_id']][v['post_id']] = {
+                    'post_tokens': v['post_tokens'],
+                    'text': post_text,
+                    'rationale': [],
+                    'label': v['annotators'][index]['label'],
+                    'target_group': v['annotators'][index]['target'],
+                    'rationale_tokens': [],
+                    'rationale_spans': [],
+                    'majority_label': [label],
+                    'majority_group': group
+                }
 
-# Save the data
-with open('hatexplain/user_data_leaked.json', 'w') as f:
-    json.dump(user_data_leaked, f)
+    return ruleset, normal_examples, global_examples
 
-with open('hatexplain/user_data_no_leak.json', 'w') as f:
-    json.dump(user_data_no_leak, f)
-            
+
+if __name__ == '__main__':
+    def run():
+        label_map = dict(normal=0, hatespeech=1, offensive=2)
+
+        dset_base_path = os_join(u.proj_path, u.dset_dir, 'hatexplain')
+
+        with open(os_join(dset_base_path, 'dataset.json')) as fl:
+            data = json.load(fl)
+        with open(os_join(dset_base_path, 'post_id_divisions.json')) as fl:
+            test_ids = json.load(fl)
+
+        user_data, normal_examples, global_examples = prepare_data(data, test_ids)
+
+        save_datasets(data=user_data, base_path=dset_base_path)
+    run()
