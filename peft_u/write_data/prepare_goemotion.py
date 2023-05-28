@@ -17,7 +17,7 @@ if __name__ == '__main__':
     detailed_e2e = {detailed_e: e for e, detailed_es in e2detailed_e.items() for detailed_e in detailed_es}
     detailed_e2e['neutral'] = 'neutral'
 
-    csv_files = ['goemotions_1.csv', 'goemotions_2.csv', 'goemotions_3.csv',]
+    csv_files = ['goemotions_1.csv', 'goemotions_2.csv', 'goemotions_3.csv']
 
     user_data = defaultdict(dict)
     for csv_file in tqdm(csv_files, desc='Processing CSVs'):

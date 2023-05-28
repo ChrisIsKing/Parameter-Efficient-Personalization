@@ -1,7 +1,7 @@
 import json
 import random
 from os.path import join as os_join
-from typing import List, Dict, Union, Any
+from typing import List, Dict, Union, Any, Callable
 from dataclasses import dataclass
 
 from torch.utils.data import Dataset
@@ -154,13 +154,25 @@ def load_dataset_with_prompts(
         )
 
 
-def iter_users(dataset: Dict[str, Any]):
+def iter_users(dataset: Dict[str, Any], start_from: Union[str, int] = None, filter_fn: Callable = None):
     """
     Deterministic ordering  of user ids
+
+    :param dataset: dataset dict
+    :param start_from: user id to start from, inclusive
+    :param filter_fn: filter function to apply to user ids
     """
-    uids = list(dataset.keys())
-    sort_fn = int if all(uid.isdigit() for uid in uids) else None
-    return sorted(uids, key=sort_fn)
+    ret = sort_user_ids(list(dataset.keys()))
+    if start_from is not None:
+        if isinstance(start_from, str):
+            assert start_from.isdigit()
+        else:
+            start_from = str(start_from)
+        idx = ret.index(start_from)
+        ret = ret[idx:]  # remove ids before `start_from`
+    if filter_fn is not None:
+        ret = [uid for uid in ret if filter_fn(uid)]
+    return ret
 
 
 if __name__ == '__main__':
