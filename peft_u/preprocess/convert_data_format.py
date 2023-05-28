@@ -19,7 +19,7 @@ __all__ = [
 ]
 
 
-logger = get_logger('Write Data')
+logger = get_logger('Convert Data Format')
 
 
 PersonalizedData = Dict[Any, Dict[str, Dict[str, Union[str, List[str]]]]]  # user_id -> sample id -> a dict of sample
@@ -57,8 +57,8 @@ def _split2train_val_test(samples: List = None, train_split_ratio: float = 0.8, 
 
 
 def data2dataset_splits(
-        data: PersonalizedData, train_split_ratio: float = 0.8, seed: int = 42, leakage: bool = True
-) -> Tuple[PersonalizedDataset, List]:
+        data: PersonalizedData = None, train_split_ratio: float = 0.8, seed: int = 42, leakage: bool = True
+) -> Tuple[PersonalizedDataset, List, Dict[str, Dict[str, int]]]:
     """
     Split data into train, val and test sets
 
@@ -66,6 +66,11 @@ def data2dataset_splits(
     :param train_split_ratio: ratio of train set
     :param seed: random seed
     :param leakage: whether to allow text sample leakage between train and test sets across users
+    :return: 3-tuple of (
+        split dataset,
+        agreement data on annotation,
+        users with too little samples and the corresponding split sizes
+    )
     """
     agreement_data = []
     user_data = defaultdict(lambda: defaultdict(dict))
@@ -90,7 +95,6 @@ def data2dataset_splits(
                 vl_.update({sid: sample for (sid, sample) in vl if sid not in tr_ and sid not in ts_})
             assert set(tr_) & set(ts_) == set() and set(tr_) & set(vl_) == set() and set(ts_) & set(vl_) == set()
             assert len(tr_) + len(ts_) + len(vl_) == len(data_)  # sanity check mutually exclusive
-        return user_data, agreement_data
     else:
         lst_sids = list(set([sid for uid, data_ in data.items() for sid in data_]))
         random.shuffle(lst_sids)
@@ -113,7 +117,14 @@ def data2dataset_splits(
                     assert post_id in vl_s  # sanity check
                     d = vl_
                 d[post_id] = value
-        return user_data, agreement_data
+
+    small_user_meta = {uid: u_data for uid, u_data in user_data.items() if any(len(d_) == 0 for d_ in u_data.values())}
+    small_user_meta = {uid: {split: len(d) for split, d in u_data.items()} for uid, u_data in small_user_meta.items()}
+    if len(small_user_meta) > 0:
+        uids = sort_user_ids(list(small_user_meta.keys()))
+        logger.warning(f'Users with too little samples: {pl.i(uids)}')
+
+    return user_data, agreement_data, small_user_meta
 
 
 def avg_num_users_per_example(user_data):
@@ -137,9 +148,11 @@ def save_datasets(data: PersonalizedData = None, base_path: str = None):
     num_annotators = len(data)
     num_examples = sum([len(v) for k, v in data.items()])
 
-    user_data_leaked, agreement_data = data2dataset_splits(data, train_split_ratio=0.8, seed=42, leakage=True)
-    user_data_no_leak, agreement_data_ = data2dataset_splits(data, train_split_ratio=0.8, seed=42, leakage=False)
+    split_args = dict(data=data, train_split_ratio=0.8, seed=42)
+    user_data_leaked, agreement_data, too_small = data2dataset_splits(**split_args, leakage=True)
+    user_data_no_leak, agreement_data_, too_small_ = data2dataset_splits(**split_args, leakage=False)
     assert set(agreement_data) == set(agreement_data_)  # sanity check
+    assert set(too_small.keys()) == set(too_small.keys())
 
     masi_task = nltk.AnnotationTask(distance=masi_distance)
     masi_task.load_array(agreement_data)

@@ -1,6 +1,7 @@
 import os
 import random
 from os.path import join as os_join
+from typing import List, Union
 
 import numpy as np
 import torch
@@ -13,6 +14,7 @@ __all__ = [
     'sconfig', 'u', 'save_fig',
     'set_seed',
     'on_great_lakes', 'get_base_path',
+    'sort_user_ids'
 ]
 
 
@@ -51,3 +53,15 @@ def get_base_path():
         return os_join('/scratch', 'profmars_root', 'profmars0', 'stefanhg')
     else:
         return u.base_path
+
+
+_USER_IDS = Union[List[str], List[int]]
+
+
+def sort_user_ids(uids: _USER_IDS) -> _USER_IDS:
+    if all(isinstance(uid, int) for uid in uids):
+        return sorted(uids)
+    else:
+        assert all(isinstance(uid, str) for uid in uids)
+        assert all(uid.isdigit() for uid in uids)
+        return sorted(uids, key=int)
