@@ -354,7 +354,7 @@ if __name__ == '__main__':
                     lst_filt = uid_too_small[dataset_name]
 
                     def filt(x):
-                        return int(x) not in lst_filt
+                        return x not in lst_filt
 
                 it = iter_users(dset, start_from=strt, filter_fn=filt)
                 n_train = len(it)

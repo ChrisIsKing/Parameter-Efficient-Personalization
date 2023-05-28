@@ -1,4 +1,5 @@
 import os
+import re
 import random
 from os.path import join as os_join
 from typing import List, Union
@@ -57,11 +58,20 @@ def get_base_path():
 
 _USER_IDS = Union[List[str], List[int]]
 
+# For `SubjectiveDiscourse`, user ids are like `worker_50`
+sub_dis_pattern = re.compile(r'^worker_(?P<id>\d+)$')
+
 
 def sort_user_ids(uids: _USER_IDS) -> _USER_IDS:
     if all(isinstance(uid, int) for uid in uids):
         return sorted(uids)
     else:
         assert all(isinstance(uid, str) for uid in uids)
-        assert all(uid.isdigit() for uid in uids)
-        return sorted(uids, key=int)
+        if all(uid.isdigit() for uid in uids):
+            sort_fn = int
+        else:
+            def sort_fn(x):
+                match = sub_dis_pattern.match(x)
+                assert match is not None
+                return int(match.group('id'))
+        return sorted(uids, key=sort_fn)

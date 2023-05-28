@@ -1,49 +1,31 @@
-from utils import *
-import json
-import nltk
-from nltk.metrics.distance import masi_distance
+from os.path import join as os_join
+from collections import defaultdict
 
-annotation_data, annotation_headers = load_csv('wikidetox/aggression_annotations.tsv', delimiter="\t", header=True)
-text_data, text_headers = load_csv('wikidetox/aggression_annotated_comments.tsv', delimiter="\t", header=True)
+from tqdm import tqdm
 
-label_map = {0: 'Normal', 1: 'Aggressive'}
+from peft_u.util import *
+from peft_u.preprocess.convert_data_format import *
 
-# Build id to text map
-id_to_text = {}
-for i, row in enumerate(text_data):
-    post_id = row[0]
-    text = row[1]
-    id_to_text[post_id] = text
 
-# Build user data
-user_data = {}
+if __name__ == '__main__':
+    dset_base_path = os_join(u.proj_path, u.dset_dir, 'wikidetox')
 
-for i, row in enumerate(annotation_data):
-    post_id = row[0]
-    user_id = row[1]
-    label = row[2]
-    if user_id not in user_data:
-        user_data[user_id] = {}
-    if post_id not in user_data[user_id]:
-        user_data[user_id][post_id] = {"text": id_to_text[post_id], "label": [label_map[int(label)]]}
-    
-num_annotators = len(user_data)
-num_examples = sum([len(v) for k, v in user_data.items()])
+    annot_path = os_join(dset_base_path, 'aggression_annotations.tsv')
+    annotation_data, annotation_headers = load_csv(annot_path, delimiter="\t", header=True)
+    txt_path = os_join(dset_base_path, 'aggression_annotated_comments.tsv')
+    text_data, text_headers = load_csv(txt_path, delimiter="\t", header=True)
 
-user_data_leaked, agreement_data = data2dataset_splits(user_data, 0.8, seed=42, leakage=True)
-user_data_no_leak, agreement_data = data2dataset_splits(user_data, 0.8, seed=42, leakage=False)
+    label_map = {0: 'Normal', 1: 'Aggressive'}
 
-masi_task = nltk.AnnotationTask(distance=masi_distance)
-masi_task.load_array(agreement_data)
-print("Krippendorff's alpha: {}".format(masi_task.alpha()))
-print("Number of Users: {}".format(num_annotators))
-print("Number of Examples: {}".format(num_examples))
-print("Average number of examples per user: {}".format(num_examples/num_annotators))
-print("Average number of users per example: {}".format(avg_num_users_per_example(user_data)))
+    id2text = dict()
+    for i, row in enumerate(tqdm(text_data, desc='Building id => text map')):
+        post_id, text = row[0], row[1]
+        id2text[post_id] = text
 
-# Save the data
-with open('wikidetox/user_data_leaked.json', 'w') as f:
-    json.dump(user_data_leaked, f)
+    user_data = defaultdict(dict)
 
-with open('wikidetox/user_data_no_leak.json', 'w') as f:
-    json.dump(user_data_no_leak, f)
+    for i, row in enumerate(tqdm(annotation_data, desc='Processing data')):
+        post_id, user_id, label = row[0], row[1], row[2]
+        if post_id not in user_data[user_id]:
+            user_data[user_id][post_id] = dict(text=id2text[post_id], label=[label_map[int(float(label))]])
+    save_datasets(data=user_data, base_path=dset_base_path)
