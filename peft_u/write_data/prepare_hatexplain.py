@@ -27,8 +27,6 @@ def prepare_data(data, test_ids=None, random_state=42):
     ruleset, normal_examples, global_examples = defaultdict(dict), dict(), defaultdict(dict)
 
     for k, v in data.items():
-        # mic(k, v)
-        # raise NotImplementedError
         label = _most_common(lst=[annotator['label'] for annotator in v['annotators']], tie_breaker='undecided')
         group = [
             item for item, count in
@@ -125,7 +123,6 @@ if __name__ == '__main__':
             test_ids = json.load(fl)
 
         user_data, normal_examples, global_examples = prepare_data(data, test_ids)
-        # mic(normal_examples, global_examples)
 
         save_datasets(data=user_data, base_path=dset_base_path)
         mic(data2label_meta(data=user_data))

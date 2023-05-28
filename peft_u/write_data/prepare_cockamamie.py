@@ -7,6 +7,8 @@ from peft_u.preprocess.convert_data_format import *
 
 
 if __name__ == '__main__':
+    from stefutil import *
+
     dset_base_path = os_join(u.proj_path, u.dset_dir, 'cockamamie')
     with open(os_join(dset_base_path, 'cockamamie.json')) as fl:
         data = json.load(fl)
@@ -26,3 +28,4 @@ if __name__ == '__main__':
                 user_data[voter][post_map[key]] = dict(text=key, label=["yes"])
 
     save_datasets(data=user_data, base_path=dset_base_path)
+    mic(data2label_meta(data=user_data))
