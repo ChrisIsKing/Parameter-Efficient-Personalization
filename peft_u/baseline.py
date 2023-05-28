@@ -287,8 +287,8 @@ def test_single(
             labels = dataset[i_sample].process_target()
             labels = labels.split(', ')  # See `peft_u.preprocess.load_dataset::InputExample.process_target`
             # model may generate multiple labels; enforce an easier requirement by allowing no whitespace between labels
-            decoded = [d.strip() for d in decoded.split(',')]
-            mic(i_sample, decoded, labels)
+            # being lenient here by dropping trailing full stop
+            decoded = [d.strip().removesuffix('.') for d in decoded.split(',')]
 
             correct = False
             for dec in decoded:

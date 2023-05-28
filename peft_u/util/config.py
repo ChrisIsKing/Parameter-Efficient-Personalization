@@ -7,8 +7,10 @@ from peft_u.util.project_paths import *
 
 config_dict = dict(
     datasets=dict(
-        cockamanie=dict(
+        cockamamie=dict(
             domain=['humor'],
+            labels=['no', 'yes'],
+            multi_label=False,
             instruction="Please rate whether the following text is funny or not funny. "
                         "Respond 'yes' if you think the text is funny and 'no' if you think the text is not funny."
         ),
@@ -42,12 +44,18 @@ config_dict = dict(
         ),
         measuringhatespeech=dict(
             domain=['hate', 'abuse'],
+            labels=['0', '1', '2'],
+            multi_label=False,
             instruction="On a scale of 0-2 rate the level of hatespeech contained in the following text. "
                         "Respond with '0' if the text does not contain hate speech, "
                         "'1' if the text contains some hate speech, and '2' if the text contains a lot of hate speech."
         ),
         studemo=dict(
             domain=['emotion'],
+            labels=[
+                'anger', 'anticipation', 'arousal', 'disgust', 'fear', 'joy', 'sadness', 'surprise', 'trust', 'valence'
+            ],
+            multi_label=True,
             instruction="Please analyze the following text and assign one or more appropriate emotion labels. "
                         "Emotion labels include" 
                         "joy, trust, anticipation, surprise, fear, sadness, disgust, anger, valence, and arousal. "
@@ -103,23 +111,6 @@ config_dict = dict(
         )
     )
 )
-
-
-# def add_labels(dataset_name: str = None):
-#     dset_base_path = os_join(BASE_PATH, PROJ_DIR, DSET_DIR, dataset_name)
-#     if dataset_name == 'goemotion':
-#         with open(os_join(dset_base_path, 'ekman_mapping.json')) as f:
-#             e2detailed_e = json.load(f)
-#         return list(e2detailed_e.keys()) + ['neutral']
-#     elif dataset_name in ['tweeteval', 'gabhate']:  # TODO: hard coded
-#         return ['Hateful', 'Non-hateful']
-#     elif dataset_name == 'hatexplain':
-#         return ['normal', 'hatespeech', 'offensive']
-#
-#
-# d_dset = config_dict['datasets']
-# for dnm in ['goemotion', 'tweeteval', 'gabhate', 'hatexplain']:
-#     d_dset[dnm]['labels'] = add_labels(dataset_name=dnm)
 
 
 if __name__ == '__main__':

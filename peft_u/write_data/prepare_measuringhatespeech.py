@@ -10,6 +10,8 @@ from peft_u.preprocess.convert_data_format import *
 
 
 if __name__ == '__main__':
+    from stefutil import *
+
     dataset = datasets.load_dataset('ucberkeley-dlab/measuring-hate-speech')
     df = dataset['train'].to_pandas()
 
@@ -23,3 +25,4 @@ if __name__ == '__main__':
     dset_base_path = os_join(u.proj_path, u.dset_dir, 'measuringhatespeech')
     os.makedirs(dset_base_path, exist_ok=True)
     save_datasets(data=user_data, base_path=dset_base_path)
+    mic(data2label_meta(data=user_data))
