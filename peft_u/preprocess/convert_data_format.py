@@ -15,7 +15,7 @@ from peft_u.util import *
 
 __all__ = [
     'PersonalizedData', 'PersonalizedDataset',
-    'load_csv', 'data2dataset_splits', 'avg_num_users_per_example', 'save_datasets'
+    'load_csv', 'data2dataset_splits', 'data2label_meta', 'avg_num_users_per_example', 'save_datasets'
 ]
 
 
@@ -129,6 +129,14 @@ def data2dataset_splits(
     return user_data, agreement_data, small_user_meta
 
 
+def data2label_meta(data: PersonalizedData) -> Dict[str, Any]:
+    """
+    :return: Dict containing whether the dataset is multi-label, and List of label options for the given dataset
+    """
+    lst_labels: List[List[str]] = [sample['label'] for uid, samples in data.items() for sid, sample in samples.items()]
+    return dict(multi_label=any(len(lbs) > 1 for lbs in lst_labels), label_options=sorted(set().union(*lst_labels)))
+
+
 def avg_num_users_per_example(user_data):
     """
     Compute the average number of users per text.
@@ -147,6 +155,11 @@ def save_datasets(data: PersonalizedData = None, base_path: str = None):
     """
     Saves processed personalized dataset as json files on disk, one leaked and one non-leaked.
     """
+    def check_label(label: List[str]):
+        return len(label) > 0 and all(isinstance(lb, str) for lb in label)
+    # sanity check each `label` is a list of strings
+    assert all(all(check_label(sample['label']) for sid, sample in samples.items()) for uid, samples in data.items())
+
     num_annotators = len(data)
     num_examples = sum([len(v) for k, v in data.items()])
 

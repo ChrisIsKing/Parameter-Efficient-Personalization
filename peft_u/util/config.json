@@ -11,7 +11,11 @@
                 "hate",
                 "abuse"
             ],
-            "instruction": "Please review the following text and indicate if it has the presence of hate speech. Respond 'Hateful' if the text contains hate speech and 'Non-hateful' if the text does not contain hate speech."
+            "instruction": "Please review the following text and indicate if it has the presence of hate speech. Respond 'Hateful' if the text contains hate speech and 'Non-hateful' if the text does not contain hate speech.",
+            "labels": [
+                "Hateful",
+                "Non-hateful"
+            ]
         },
         "goemotion": {
             "domain": [
@@ -33,7 +37,12 @@
                 "hate",
                 "abuse"
             ],
-            "instruction": "Please review the following text and indicate if it has the presence of hate speech or is offensive in nature. Respond 'hatespeech' if the text contains hate speech, 'offensive' if the text does not contain hate speech but is offensive and 'normal' if the text is neither offensive nor contains hate speech."
+            "instruction": "Please review the following text and indicate if it has the presence of hate speech or is offensive in nature. Respond 'hatespeech' if the text contains hate speech, 'offensive' if the text does not contain hate speech but is offensive and 'normal' if the text is neither offensive nor contains hate speech.",
+            "labels": [
+                "normal",
+                "hatespeech",
+                "offensive"
+            ]
         },
         "measuringhatespeech": {
             "domain": [
@@ -71,7 +80,11 @@
                 "hate",
                 "abuse"
             ],
-            "instruction": "Please review the following text and indicate if it has the presence of hate speech. Respond 'Hateful' if the text contains hate speech and 'Non-hateful' if the text does not contain hate speech."
+            "instruction": "Please review the following text and indicate if it has the presence of hate speech. Respond 'Hateful' if the text contains hate speech and 'Non-hateful' if the text does not contain hate speech.",
+            "labels": [
+                "Hateful",
+                "Non-hateful"
+            ]
         },
         "unhealthyconversations": {
             "domain": [
