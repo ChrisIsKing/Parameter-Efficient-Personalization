@@ -14,12 +14,16 @@ config_dict = dict(
         ),
         gabhate=dict(
             domain=['hate', 'abuse'],
+            labels=['Hateful', 'Non-hateful'],
+            multi_label=False,
             instruction="Please review the following text and indicate if it has the presence of hate speech. "
                         "Respond 'Hateful' if the text contains hate speech "
                         "and 'Non-hateful' if the text does not contain hate speech."
         ),
         goemotion=dict(
             domain=['emotion'],
+            labels=['anger', 'disgust', 'fear', 'joy', 'sadness', 'surprise'],
+            multi_label=True,
             instruction="Please analyze the following text and assign one or more appropriate emotion labels. " 
                         "Emotion labels include happiness, sadness, anger, surprise, joy, fear, disgust. "
                         "You can select one or multiple emotion labels that "
@@ -28,6 +32,8 @@ config_dict = dict(
         ),
         hatexplain=dict(
             domain=['hate', 'abuse'],
+            labels=['hatespeech', 'normal', 'offensive'],
+            multi_label=False,
             instruction="Please review the following text "
                         "and indicate if it has the presence of hate speech or is offensive in nature. " 
                         "Respond 'hatespeech' if the text contains hate speech, "
@@ -75,6 +81,8 @@ config_dict = dict(
         ),
         tweeteval=dict(
             domain=['hate', 'abuse'],
+            labels=['Hateful', 'Non-hateful'],
+            multi_label=False,
             instruction="Please review the following text and indicate if it has the presence of hate speech. "
                         "Respond 'Hateful' if the text contains hate speech "
                         "and 'Non-hateful' if the text does not contain hate speech."
@@ -97,23 +105,30 @@ config_dict = dict(
 )
 
 
-def add_labels(dataset_name: str = None):
-    dset_base_path = os_join(BASE_PATH, PROJ_DIR, DSET_DIR, dataset_name)
-    if dataset_name == 'goemotion':
-        with open(os_join(dset_base_path, 'ekman_mapping.json')) as f:
-            e2detailed_e = json.load(f)
-        return list(e2detailed_e.keys()) + ['neutral']
-
-
-d_dset = config_dict['datasets']
-d_dset['goemotion']['labels'] = add_labels('goemotion')
+# def add_labels(dataset_name: str = None):
+#     dset_base_path = os_join(BASE_PATH, PROJ_DIR, DSET_DIR, dataset_name)
+#     if dataset_name == 'goemotion':
+#         with open(os_join(dset_base_path, 'ekman_mapping.json')) as f:
+#             e2detailed_e = json.load(f)
+#         return list(e2detailed_e.keys()) + ['neutral']
+#     elif dataset_name in ['tweeteval', 'gabhate']:  # TODO: hard coded
+#         return ['Hateful', 'Non-hateful']
+#     elif dataset_name == 'hatexplain':
+#         return ['normal', 'hatespeech', 'offensive']
+#
+#
+# d_dset = config_dict['datasets']
+# for dnm in ['goemotion', 'tweeteval', 'gabhate', 'hatexplain']:
+#     d_dset[dnm]['labels'] = add_labels(dataset_name=dnm)
 
 
 if __name__ == '__main__':
-    mic.output_width = 256
+    def run():
+        mic.output_width = 256
 
-    fl_nm = 'config.json'
-    mic(config_dict)
-    open(fl_nm, 'a').close()  # Create file in OS
-    with open(os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', fl_nm), 'w') as f:
-        json.dump(config_dict, f, indent=4)
+        fl_nm = 'config.json'
+        mic(config_dict)
+        open(fl_nm, 'a').close()  # Create file in OS
+        with open(os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', fl_nm), 'w') as f:
+            json.dump(config_dict, f, indent=4)
+    run()

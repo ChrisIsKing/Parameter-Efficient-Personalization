@@ -27,6 +27,7 @@ class InputExample:
         self.text = text
         self.prompt_examples = prompt_examples
         self.instruction = instruction
+        assert isinstance(label, list) and all(isinstance(l, str) for l in label)
         self.label = label
 
     def process_template(self):

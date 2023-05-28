@@ -1,6 +1,6 @@
 import json
 from os.path import join as os_join
-from collections import Counter
+from collections import Counter, defaultdict
 
 from peft_u.util import *
 from peft_u.preprocess.convert_data_format import *
@@ -24,100 +24,99 @@ def prepare_data(data, test_ids=None, random_state=42):
     Prepare hatexplain data.
     """
     set_seed(random_state)
-    ruleset = {}
-    normal_examples = {}
-    global_examples = {"all": {}, "train": {}, "test": {}, "val": {}}
+    ruleset, normal_examples, global_examples = defaultdict(dict), dict(), defaultdict(dict)
 
     for k, v in data.items():
-        label = _most_common(lst=[annotator['label'] for annotator in v['annotators']], tie_breaker="undecided")
+        # mic(k, v)
+        # raise NotImplementedError
+        label = _most_common(lst=[annotator['label'] for annotator in v['annotators']], tie_breaker='undecided')
         group = [
             item for item, count in
             Counter([group for annotator in v['annotators'] for group in annotator['target']]).items() if count > 1
         ]
         if not group:
-            group = ["None"]
-        post_text = " ".join(v['post_tokens'])
-        if label == "normal":
-            v['majority_label'] = ["normal"]
-            v['text'] = post_text
+            group = ['None']
+        post_id, post_text = v['post_id'], ' '.join(v['post_tokens'])
+        if label == 'normal':
+            v['text'], v['majority_label'] = post_text, ['normal']
             v['majority_group'] = group
             normal_examples[k] = v
+
             v['rationale_spans'] = []
             if test_ids:
-                if v['post_id'] in test_ids["train"]:
-                    global_examples["train"][k] = v
-                elif v['post_id'] in test_ids["test"]:
-                    global_examples["test"][k] = v
-                elif v['post_id'] in test_ids["val"]:
-                    global_examples["val"][k] = v
+                split = None
+                if post_id in test_ids['train']:
+                    split = 'train'
+                elif post_id in test_ids['test']:
+                    split = 'test'
+                elif post_id in test_ids['val']:
+                    split = 'val'
+                global_examples[split][k] = v
         elif label != "undecided":
-            global_examples["all"][k] = v
-            global_examples["all"][k]['majority_label'] = [label]
-            global_examples["all"][k]['text'] = post_text
-            global_examples["all"][k]['rationale_spans'] = []
-            global_examples["all"][k]['majority_group'] = group
+            global_examples['all'][k] = v | dict(
+                majority_label=[label],
+                text=post_text,
+                rationale_spans=[],
+                majority_group=group
+            )
+
         for index, annotator in enumerate(v['annotators']):
-            if annotator['annotator_id'] not in ruleset:
-                ruleset[annotator['annotator_id']] = {}
+            annot_id = annotator['annotator_id']
             if v['rationales']:
+                d = dict(
+                    post_tokens=v['post_tokens'],
+                    text=post_text,
+                    label=[v['annotators'][index]['label']],
+                    target_group=v['annotators'][index]['target'],
+                    rationale_spans=[],
+                    majority_label=[label],
+                    majority_group=group
+                )
+
                 if len(v['rationales']) <= index:
-                    ruleset[annotator['annotator_id']][v['post_id']] = {
-                        'post_tokens': v['post_tokens'],
-                        'text': post_text,
-                        'rationale': [],
-                        'label': v['annotators'][index]['label'],
-                        'target_group': v['annotators'][index]['target'],
-                        'rationale_tokens': [],
-                        'rationale_spans': [],
-                        'majority_label': [label],
-                        'majority_group': group
-                    }
+                    ruleset[annot_id][post_id] = d | dict(
+                        rationale=[],
+                        rationale_tokens=[]
+                    )
                 else:
-                    ruleset[annotator['annotator_id']][v['post_id']] = {
-                        'post_tokens': v['post_tokens'],
-                        'text': post_text,
-                        'rationale': v['rationales'][index],
-                        'label': v['annotators'][index]['label'],
-                        'target_group': v['annotators'][index]['target'],
-                        'rationale_tokens': [token for i, token in enumerate(v['post_tokens']) if
-                                             v['rationales'][index][i] == 1],
-                        'rationale_spans': [],
-                        'majority_label': [label],
-                        'majority_group': group
-                    }
+                    d |= dict(
+                        rationale=v['rationales'][index],
+                        rationale_tokens=[
+                            token for i, token in enumerate(v['post_tokens']) if v['rationales'][index][i] == 1
+                        ]
+                    )
                     queue = []
                     for flag, value in zip(v['rationales'][index], v['post_tokens']):
                         if flag:
                             queue.append(value)
                         elif queue:
-                            rationale = " ".join(queue)
-                            ruleset[annotator['annotator_id']][v['post_id']]['rationale_spans'].append(rationale)
-                            global_examples["all"][k]['rationale_spans'].append(rationale)
+                            rationale = ' '.join(queue)
+                            d['rationale_spans'].append(rationale)
+                            global_examples['all'][k]['rationale_spans'].append(rationale)
                             queue = []
                     if queue:
-                        rationale = " ".join(queue)
-                        ruleset[annotator['annotator_id']][v['post_id']]['rationale_spans'].append(rationale)
-                        global_examples["all"][k]['rationale_spans'].append(rationale)
+                        rationale = ' '.join(queue)
+                        d['rationale_spans'].append(rationale)
+                        global_examples['all'][k]['rationale_spans'].append(rationale)
+                    ruleset[annot_id][post_id] = d
             else:
-                ruleset[annotator['annotator_id']][v['post_id']] = {
-                    'post_tokens': v['post_tokens'],
-                    'text': post_text,
-                    'rationale': [],
-                    'label': v['annotators'][index]['label'],
-                    'target_group': v['annotators'][index]['target'],
-                    'rationale_tokens': [],
-                    'rationale_spans': [],
-                    'majority_label': [label],
-                    'majority_group': group
-                }
-
+                ruleset[annot_id][post_id] = dict(
+                    post_tokens=v['post_tokens'],
+                    text=post_text,
+                    label=[v['annotators'][index]['label']],
+                    target_group=v['annotators'][index]['target'],
+                    rationale_spans=[],
+                    majority_label=[label],
+                    majority_group=group
+                )
     return ruleset, normal_examples, global_examples
 
 
 if __name__ == '__main__':
-    def run():
-        label_map = dict(normal=0, hatespeech=1, offensive=2)
+    from stefutil import *
 
+    def run():
+        # Labels: [`normal`, `hatespeech`, `offensive`]
         dset_base_path = os_join(u.proj_path, u.dset_dir, 'hatexplain')
 
         with open(os_join(dset_base_path, 'dataset.json')) as fl:
@@ -126,6 +125,8 @@ if __name__ == '__main__':
             test_ids = json.load(fl)
 
         user_data, normal_examples, global_examples = prepare_data(data, test_ids)
+        # mic(normal_examples, global_examples)
 
         save_datasets(data=user_data, base_path=dset_base_path)
+        mic(data2label_meta(data=user_data))
     run()

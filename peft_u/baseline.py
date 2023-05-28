@@ -1,6 +1,7 @@
 import os
+import json
 from os.path import join as os_join
-from typing import Tuple
+from typing import Tuple, List, Dict
 from logging import Logger
 from argparse import ArgumentParser
 from functools import partial
@@ -266,7 +267,7 @@ def test_single(
     ts_dl = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn)
 
     trues, preds = np.empty(n_sample, dtype=int), np.empty(n_sample, dtype=int)
-    it = tqdm(ts_dl, desc=tqdm_desc or 'Testing... ')
+    it = tqdm(ts_dl, desc=tqdm_desc or 'Testing ')
     d_it = dict(dataset_size=pl.i(len(dataset)))
     it.set_postfix(d_it)
 
@@ -287,6 +288,7 @@ def test_single(
             labels = labels.split(', ')  # See `peft_u.preprocess.load_dataset::InputExample.process_target`
             # model may generate multiple labels; enforce an easier requirement by allowing no whitespace between labels
             decoded = [d.strip() for d in decoded.split(',')]
+            mic(i_sample, decoded, labels)
 
             correct = False
             for dec in decoded:
@@ -306,6 +308,23 @@ def test_single(
             d_it['cls_acc'] = pl.i(acc_str)
             it.set_postfix(d_it)
     return ret
+
+
+def _get_dataset_and_users_it(
+        dataset_name: str, leakage: bool = False, uid_start_from: str = None
+) -> Tuple[Dict[str, InputEgDataset], List[str]]:
+    from peft_u._dset_uid_too_small import uid_too_small
+
+    dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage)
+
+    filt = None
+    if dataset_name in uid_too_small:
+        lst_filt = uid_too_small[dataset_name]
+
+        def filt(x):
+            return x not in lst_filt
+    it = iter_users(dset, start_from=uid_start_from, filter_fn=filt)
+    return dset, it
 
 
 if __name__ == '__main__':
@@ -335,29 +354,19 @@ if __name__ == '__main__':
             logger.info(f'Training PEFT w/ {pl.i(d_log)}...')
             logger_fl.info(f'Training PEFT w/ {d_log}...')
 
-            dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage)
-            load_args = dict(peft_method=method, device=device, logger_fl=logger_fl)
+            # strt = 47  # goemotion
+            # strt = 108  # hatexplain
+            # strt = 127  # measuringhatespeech
+            strt = None
+            dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage, uid_start_from=strt)
+            md_load_args = dict(peft_method=method, device=device, logger_fl=logger_fl)
 
             tm = Timer()
             if personalize:
                 # global_tqdm = True
                 global_tqdm = False
 
-                # strt = 47  # goemotion
-                # strt = 108  # hatexplain
-                # strt = 127  # measuringhatespeech
-                strt = None
-
-                from peft_u._dset_uid_too_small import uid_too_small
-                filt = None
-                if dataset_name in uid_too_small:
-                    lst_filt = uid_too_small[dataset_name]
-
-                    def filt(x):
-                        return x not in lst_filt
-
-                it = iter_users(dset, start_from=strt, filter_fn=filt)
-                n_train = len(it)
+                n_user = len(it)
                 logger.info(f'Training on users {pl.i(it)}... ')
                 logger_fl.info(f'Training on users {it}... ')
                 if global_tqdm:
@@ -370,13 +379,13 @@ if __name__ == '__main__':
                         d_log = dict(user=uid) | _get_dataset_sizes(dset[uid])
                         it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
                     else:
-                        user_ordinal = f'{pl.i(i)}/{pl.i(n_train)}'
+                        user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
                         logger.info(f'Launching {pl.i(dataset_name)} personalized training '
                                     f'for User {pl.i(uid)}({user_ordinal})...')
                     tm_ = Timer()
 
                     # reload model for each user
-                    model, tokenizer = load_model_n_tokenizer(model_name_or_path, **load_args)
+                    model, tokenizer = load_model_n_tokenizer(model_name_or_path, **md_load_args)
                     train_single(
                         model=model, tokenizer=tokenizer, dataset=dset[uid], device=device, seed=seed,
                         batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
@@ -387,7 +396,7 @@ if __name__ == '__main__':
                         logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
                     logger_fl.info(f'Training for User {uid} done in {t_e_}')
             else:
-                model, tokenizer = load_model_n_tokenizer(model_name_or_path, **load_args, verbose=True)
+                model, tokenizer = load_model_n_tokenizer(model_name_or_path, **md_load_args, verbose=True)
                 train_single(
                     model=model, tokenizer=tokenizer, dataset=dset, device=device,
                     batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
@@ -413,16 +422,18 @@ if __name__ == '__main__':
             logger.info(f'Testing PEFT w/ {pl.i(d_log)}...')
 
             if personalize:
-                dset = load_dataset_with_prompts(dataset_name, leakage=leakage)
+                dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage)
+                n_user = len(it)
                 model_name_or_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
 
-                accs = []
+                logger.info(f'Testing on users {pl.i(it)}... ')
 
-                for i, uid in enumerate(iter_users(dset), start=1):
+                accs = dict()
+                for i, uid in enumerate(it, start=1):
                     ts = ListDataset(dset[uid].test)
                     # logger.info(f'Testing personalized PEFT for User {pl.i(uid)} w/ test split size {pl.i(len(ts))}...')
-                    user_ordinal = f'{pl.i(i)}/{pl.i(len(dset))}'
-                    desc = f'Testing on User {pl.i(uid)}({user_ordinal})... '
+                    user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
+                    desc = f'Testing on User {pl.i(uid)}({user_ordinal})'
 
                     user_str = f'User-{uid}'
                     path = os_join(model_name_or_path, user_str, 'trained')
@@ -436,9 +447,12 @@ if __name__ == '__main__':
                     path = os_join(eval_output_path, f'{user_str}.csv')
                     df.to_csv(path)
 
-                    accs.append(acc)
-                acc_avg = np.mean(accs)
-                logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg*100)}')
+                    accs[uid] = acc
+                acc_avg = np.mean(list(accs.values()))
+                acc_avg_str = f'{acc_avg*100:.1f}'
+                logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg_str)}')
+                with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
+                    json.dump(accs, f, indent=4)
             else:
                 raise NotImplementedError('Non personalized test')
     run()

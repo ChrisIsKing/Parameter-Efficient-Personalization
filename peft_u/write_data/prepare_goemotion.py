@@ -9,6 +9,8 @@ from peft_u.preprocess.convert_data_format import *
 
 
 if __name__ == '__main__':
+    from stefutil import *
+
     dset_base_path = os_join(u.proj_path, u.dset_dir, 'goemotion')
 
     with open(os_join(dset_base_path, 'ekman_mapping.json')) as f:
@@ -32,3 +34,4 @@ if __name__ == '__main__':
                 user_data[user_id][post_id] = dict(text=text, label=label)
 
     save_datasets(data=user_data, base_path=dset_base_path)
+    mic(data2label_meta(data=user_data))
