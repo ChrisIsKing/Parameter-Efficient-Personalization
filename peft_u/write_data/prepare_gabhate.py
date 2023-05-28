@@ -1,4 +1,5 @@
 from os.path import join as os_join
+from collections import defaultdict
 
 from peft_u.util import *
 from peft_u.preprocess.convert_data_format import *
@@ -10,16 +11,9 @@ if __name__ == '__main__':
 
     label_map = {0: 'Non-hateful', 1: 'Hateful'}
 
-    user_data = {}
+    user_data = defaultdict(dict)
 
     for row in data:
-        post_id = row[0]
-        user_id = row[1]
-        text = row[2]
-        label = label_map[int(row[3])]
-
-        if user_id not in user_data:
-            user_data[user_id] = {}
-        user_data[user_id][post_id] = {"text": text, "label": [label]}
-
+        post_id, user_id, text, label = row[0], row[1], row[2], label_map[int(row[3])]
+        user_data[user_id][post_id] = dict(text=text, label=[label])
     save_datasets(data=user_data, base_path=dset_base_path)

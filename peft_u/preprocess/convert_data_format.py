@@ -72,6 +72,8 @@ def data2dataset_splits(
         users with too little samples and the corresponding split sizes
     )
     """
+    d_log = dict(train_split_ratio=train_split_ratio, seed=seed, leakage=leakage)
+    logger.info(f'Splitting data with {pl.i(d_log)}... ')
     agreement_data = []
     user_data = defaultdict(lambda: defaultdict(dict))
 
@@ -152,7 +154,6 @@ def save_datasets(data: PersonalizedData = None, base_path: str = None):
     user_data_leaked, agreement_data, too_small = data2dataset_splits(**split_args, leakage=True)
     user_data_no_leak, agreement_data_, too_small_ = data2dataset_splits(**split_args, leakage=False)
     assert set(agreement_data) == set(agreement_data_)  # sanity check
-    assert set(too_small.keys()) == set(too_small.keys())
 
     masi_task = nltk.AnnotationTask(distance=masi_distance)
     masi_task.load_array(agreement_data)
