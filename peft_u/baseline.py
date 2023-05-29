@@ -1,7 +1,7 @@
 import os
 import json
 from os.path import join as os_join
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Union
 from logging import Logger
 from argparse import ArgumentParser
 from functools import partial
@@ -285,6 +285,7 @@ def test_single(
         for i, decoded in enumerate(lst_decoded):
             i_sample = i_ba * batch_size + i
             labels = dataset[i_sample].process_target()
+            # mic(dataset[i_sample].process_template(), decoded, labels)
             labels = labels.split(', ')  # See `peft_u.preprocess.load_dataset::InputExample.process_target`
             # model may generate multiple labels; enforce an easier requirement by allowing no whitespace between labels
             # being lenient here by dropping trailing full stop
@@ -311,18 +312,18 @@ def test_single(
 
 
 def _get_dataset_and_users_it(
-        dataset_name: str, leakage: bool = False, uid_start_from: str = None
+        dataset_name: str, leakage: bool = False, uid_start_from: Union[str, int] = None
 ) -> Tuple[Dict[str, InputEgDataset], List[str]]:
     from peft_u._dset_uid_too_small import uid_too_small
 
     dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage)
 
     filt = None
-    if dataset_name in uid_too_small:
-        lst_filt = uid_too_small[dataset_name]
-
-        def filt(x):
-            return x not in lst_filt
+    # if dataset_name in uid_too_small:
+    #     lst_filt = uid_too_small[dataset_name]
+    #
+    #     def filt(x):
+    #         return x not in lst_filt
     it = iter_users(dset, start_from=uid_start_from, filter_fn=filt)
     return dset, it
 
@@ -355,7 +356,7 @@ if __name__ == '__main__':
             logger_fl.info(f'Training PEFT w/ {d_log}...')
 
             # strt = 47  # goemotion
-            # strt = 108  # hatexplain
+            # strt = 28  # hatexplain
             # strt = 127  # measuringhatespeech
             strt = None
             dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage, uid_start_from=strt)
@@ -383,6 +384,13 @@ if __name__ == '__main__':
                         logger.info(f'Launching {pl.i(dataset_name)} personalized training '
                                     f'for User {pl.i(uid)}({user_ordinal})...')
                     tm_ = Timer()
+
+                    # if any dataset split is empty, skip
+                    # TODO: those users should be deterministic by each dataset processing
+                    split_sizes = _get_dataset_sizes(dset[uid])
+                    if any(v == 0 for v in split_sizes.values()):
+                        logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
+                        continue
 
                     # reload model for each user
                     model, tokenizer = load_model_n_tokenizer(model_name_or_path, **md_load_args)
@@ -437,7 +445,12 @@ if __name__ == '__main__':
 
                     user_str = f'User-{uid}'
                     path = os_join(model_name_or_path, user_str, 'trained')
-                    assert os.path.exists(path)  # sanity check
+                    # assert os.path.exists(path)  # sanity check
+                    if not os.path.exists(path) or len(ts) == 0:
+                        # TODO: see issue in training, empty split sizes
+                        logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
+                        continue
+
                     model, tokenizer = load_trained(model_name_or_path=path)
 
                     df, acc = test_single(

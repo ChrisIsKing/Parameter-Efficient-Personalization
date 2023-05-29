@@ -23,7 +23,7 @@ if __name__ == '__main__':
 
     user_data = defaultdict(dict)
     for csv_file in tqdm(csv_files, desc='Processing CSVs'):
-        data, header = load_csv(os_join(dset_base_path, csv_file), delimiter=",", header=True)
+        data, header = load_csv(os_join(dset_base_path, csv_file), delimiter=',', header=True)
         for row in data:
             text, post_id, user_id = row[0], row[1], row[7]
             label = list(set([detailed_e2e[header[i + 9]] for i, item in enumerate(row[9:]) if item == '1']))

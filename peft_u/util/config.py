@@ -7,31 +7,6 @@ from peft_u.util.project_paths import *
 
 config_dict = dict(
     datasets=dict(
-        cockamamie=dict(
-            domain=['humor'],
-            labels=['no', 'yes'],
-            multi_label=False,
-            instruction="Please rate whether the following text is funny or not funny. "
-                        "Respond 'yes' if you think the text is funny and 'no' if you think the text is not funny."
-        ),
-        gabhate=dict(
-            domain=['hate', 'abuse'],
-            labels=['Hateful', 'Non-hateful'],
-            multi_label=False,
-            instruction="Please review the following text and indicate if it has the presence of hate speech. "
-                        "Respond 'Hateful' if the text contains hate speech "
-                        "and 'Non-hateful' if the text does not contain hate speech."
-        ),
-        goemotion=dict(
-            domain=['emotion'],
-            labels=['anger', 'disgust', 'fear', 'joy', 'sadness', 'surprise'],
-            multi_label=True,
-            instruction="Please analyze the following text and assign one or more appropriate emotion labels. " 
-                        "Emotion labels include happiness, sadness, anger, surprise, joy, fear, disgust. "
-                        "You can select one or multiple emotion labels that "
-                        "best capture the emotional content of the text. "
-                        "Respond with the emotion labels separated by a comma."
-        ),
         hatexplain=dict(
             domain=['hate', 'abuse'],
             labels=['hatespeech', 'normal', 'offensive'],
@@ -42,6 +17,14 @@ config_dict = dict(
                         "'offensive' if the text does not contain hate speech but is offensive "
                         "and 'normal' if the text is neither offensive nor contains hate speech."
         ),
+        gabhate=dict(
+            domain=['hate', 'abuse'],
+            labels=['Hateful', 'Non-hateful'],
+            multi_label=False,
+            instruction="Please review the following text and indicate if it has the presence of hate speech. "
+                        "Respond 'Hateful' if the text contains hate speech "
+                        "and 'Non-hateful' if the text does not contain hate speech."
+        ),
         measuringhatespeech=dict(
             domain=['hate', 'abuse'],
             labels=['0', '1', '2'],
@@ -49,6 +32,40 @@ config_dict = dict(
             instruction="On a scale of 0-2 rate the level of hatespeech contained in the following text. "
                         "Respond with '0' if the text does not contain hate speech, "
                         "'1' if the text contains some hate speech, and '2' if the text contains a lot of hate speech."
+        ),
+        tweeteval=dict(
+            domain=['hate', 'abuse'],
+            labels=['Hateful', 'Non-hateful'],
+            multi_label=False,
+            instruction="Please review the following text and indicate if it has the presence of hate speech. "
+                        "Respond 'Hateful' if the text contains hate speech "
+                        "and 'Non-hateful' if the text does not contain hate speech."
+        ),
+        unhealthyconversations=dict(
+            domain=['hate', 'abuse'],
+            labels=['0', '1'],   # TODO: change to 'healthy' and 'unhealthy'?
+            multi_label=False,
+            instruction="Please review the following text and indicated if it is 'healthy' or 'unhealthy'. "
+                        "Respond 'healthy' if the text is healthy and "
+                        "'unhealthy' if the text can be considered hostile, antagonistic, condescending, dismissive "
+                        "or an unfair generalization."
+        ),
+        wikidetox=dict(
+            domain=['hate', 'abuse'],
+            instruction="Please review the following text "
+                        "and indicate if it has the presence of malicious remark to a person or group. "
+                        "Respond 'Aggressive' if the text contains a personal attack "
+                        "and 'Normal' if the text does not contain a personal attack."
+        ),
+        goemotion=dict(
+            domain=['emotion'],
+            labels=['anger', 'disgust', 'fear', 'joy', 'sadness', 'surprise'],
+            multi_label=True,
+            instruction="Please analyze the following text and assign one or more appropriate emotion labels. " 
+                        "Emotion labels include happiness, sadness, anger, surprise, joy, fear, disgust. "
+                        "You can select one or multiple emotion labels that "
+                        "best capture the emotional content of the text. "
+                        "Respond with the emotion labels separated by a comma."
         ),
         studemo=dict(
             domain=['emotion'],
@@ -62,6 +79,13 @@ config_dict = dict(
                         "You can select one or multiple emotion labels "
                         "that best capture the emotional content of the text. "
                         "Respond with the emotion labels separated by a comma."
+        ),
+        cockamamie=dict(
+            domain=['humor'],
+            labels=['no', 'yes'],
+            multi_label=False,
+            instruction="Please rate whether the following text is funny or not funny. "
+                        "Respond 'yes' if you think the text is funny and 'no' if you think the text is not funny."
         ),
         subjectivediscourse_response=dict(
             domain=['discourse'],
@@ -86,28 +110,6 @@ config_dict = dict(
                         "Sentiment labels include 'somewhatPositive', 'positive', 'veryPositive', 'somewhatNegative', "
                         "'veryNegative', 'neutral' and 'negative'. "
                         "Respond with the sentiment label that best captures your sentiment towards the witness."
-        ),
-        tweeteval=dict(
-            domain=['hate', 'abuse'],
-            labels=['Hateful', 'Non-hateful'],
-            multi_label=False,
-            instruction="Please review the following text and indicate if it has the presence of hate speech. "
-                        "Respond 'Hateful' if the text contains hate speech "
-                        "and 'Non-hateful' if the text does not contain hate speech."
-        ),
-        unhealthyconversations=dict(
-            domain=['hate', 'abuse'],
-            instruction="Please review the following text and indicated if it is 'healthy' or 'unhealthy'. "
-                        "Respond 'healthy' if the text is healthy and "
-                        "'unhealthy' if the text can be considered hostile, antagonistic, condescending, dismissive "
-                        "or an unfair generalization."
-        ),
-        wikidetox=dict(
-            domain=['hate', 'abuse'],
-            instruction="Please review the following text "
-                        "and indicate if it has the presence of malicious remark to a person or group. "
-                        "Respond 'Aggressive' if the text contains a personal attack "
-                        "and 'Normal' if the text does not contain a personal attack."
         )
     )
 )
