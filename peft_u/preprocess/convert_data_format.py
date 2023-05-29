@@ -77,7 +77,9 @@ def data2dataset_splits(
     agreement_data = []
     user_data = defaultdict(lambda: defaultdict(dict))
 
-    it = tqdm(data.items(), desc='Splitting data', total=len(data), unit='user')
+    # it = data.items()
+    it = ((uid, data[uid]) for uid in sorted(data.keys()))
+    it = tqdm(it, desc='Splitting data', total=len(data), unit='user')
     if leakage:
         for uid, data_ in it:
             agreement_data += [(uid, post_id, frozenset(value['label'])) for post_id, value in data_.items()]
@@ -99,6 +101,7 @@ def data2dataset_splits(
             assert len(tr_) + len(ts_) + len(vl_) == len(data_)  # sanity check mutually exclusive
     else:
         lst_sids = list(set([sid for uid, data_ in data.items() for sid in data_]))
+        set_seed(seed)
         random.shuffle(lst_sids)
 
         tr, vl, ts = _split2train_val_test(lst_sids, train_split_ratio=train_split_ratio, seed=seed)

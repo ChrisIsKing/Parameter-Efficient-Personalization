@@ -30,7 +30,7 @@ def set_seed(seed):
     """
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(0)
+    torch.manual_seed(seed)
 
 
 def get_current_directory():

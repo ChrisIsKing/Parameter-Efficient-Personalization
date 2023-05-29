@@ -8,6 +8,8 @@ from peft_u.preprocess.convert_data_format import *
 
 
 if __name__ == '__main__':
+    from stefutil import *
+
     dset_base_path = os_join(u.proj_path, u.dset_dir, 'unhealthyconversations')
 
     data, headers = load_csv(os_join(dset_base_path, 'unhealthy_full.csv'), delimiter=',', header=True)
@@ -19,3 +21,4 @@ if __name__ == '__main__':
         if post_id not in user_data[user_id]:
             user_data[user_id][post_id] = dict(text=text, label=[label])
     save_datasets(data=user_data, base_path=dset_base_path)
+    mic(data2label_meta(data=user_data))

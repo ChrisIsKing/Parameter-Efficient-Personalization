@@ -26,7 +26,10 @@ def prepare_data(data, test_ids=None, random_state=42):
     set_seed(random_state)
     ruleset, normal_examples, global_examples = defaultdict(dict), dict(), defaultdict(dict)
 
-    for k, v in data.items():
+    # for k, v in data.items():
+    for k in sorted(data.keys()):
+        v = data[k]
+
         label = _most_common(lst=[annotator['label'] for annotator in v['annotators']], tie_breaker='undecided')
         group = [
             item for item, count in
