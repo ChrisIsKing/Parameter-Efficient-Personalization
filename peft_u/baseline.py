@@ -120,8 +120,10 @@ def train_single(
         model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: InputEgDataset,
         device: str = 'cuda', seed: int = 42,
         batch_size: int = 8, num_epochs: int = 3, learning_rate: float = 2e-5, weight_decay: float = 0.01,
-        output_path: str = None, verbose: bool = False
+        output_path: str = None, user_id: str = None, verbose: bool = False
 ):
+    output_path = os_join(output_path, f'User-{user_id}')
+
     def _save(dir_nm: str):
         model.save_pretrained(os_join(output_path, dir_nm))
         tokenizer.save_pretrained(os_join(output_path, dir_nm))
@@ -145,7 +147,7 @@ def train_single(
         num_training_steps=n_step,
     )
 
-    logger_fl = get_logger('PEFT Train', kind='file-write', file_path=os_join(output_path, 'train.log'))
+    logger_fl = get_logger(f'PEFT Train User-{user_id}', kind='file-write', file_path=os_join(output_path, 'train.log'))
     tb_writer = SummaryWriter(os_join(output_path, f'tensorboard'))
     d_log = _get_dataset_sizes(dataset)
     # if verbose:
@@ -397,7 +399,7 @@ if __name__ == '__main__':
                     train_single(
                         model=model, tokenizer=tokenizer, dataset=dset[uid], device=device, seed=seed,
                         batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
-                        weight_decay=weight_decay, output_path=os_join(output_path, f'User-{uid}')
+                        weight_decay=weight_decay, output_path=output_path, user_id=uid
                     )
                     t_e_ = tm_.end()
                     if not global_tqdm:
