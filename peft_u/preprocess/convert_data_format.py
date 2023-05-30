@@ -77,8 +77,8 @@ def data2dataset_splits(
     agreement_data = []
     user_data = defaultdict(lambda: defaultdict(dict))
 
-    # it = data.items()
-    it = ((uid, data[uid]) for uid in sorted(data.keys()))
+    it = data.items()
+    # it = ((uid, data[uid]) for uid in sorted(data.keys()))
     it = tqdm(it, desc='Splitting data', total=len(data), unit='user')
     if leakage:
         for uid, data_ in it:
@@ -100,9 +100,11 @@ def data2dataset_splits(
             assert set(tr_) & set(ts_) == set() and set(tr_) & set(vl_) == set() and set(ts_) & set(vl_) == set()
             assert len(tr_) + len(ts_) + len(vl_) == len(data_)  # sanity check mutually exclusive
     else:
-        lst_sids = list(set([sid for uid, data_ in data.items() for sid in data_]))
+        lst_sids = sorted(set([sid for uid, data_ in data.items() for sid in data_]))  # sort for reproducibility
+        # mic(lst_sids[:10])
         set_seed(seed)
         random.shuffle(lst_sids)
+        # mic(lst_sids[:10])
 
         tr, vl, ts = _split2train_val_test(lst_sids, train_split_ratio=train_split_ratio, seed=seed)
         tr_s, vl_s, ts_s = set(tr), set(vl), set(ts)  # for faster lookup
@@ -169,6 +171,7 @@ def save_datasets(data: PersonalizedData = None, base_path: str = None):
     split_args = dict(data=data, train_split_ratio=0.8, seed=42)
     user_data_leaked, agreement_data, too_small = data2dataset_splits(**split_args, leakage=True)
     user_data_no_leak, agreement_data_, too_small_ = data2dataset_splits(**split_args, leakage=False)
+    # raise NotImplementedError
     assert set(agreement_data) == set(agreement_data_)  # sanity check
 
     masi_task = nltk.AnnotationTask(distance=masi_distance)
@@ -192,3 +195,8 @@ def save_datasets(data: PersonalizedData = None, base_path: str = None):
     with open(fnm_no_leak, 'w') as f:
         json.dump(user_data_no_leak, f)
     logger.info(f'Non-leaked data saved to {pl.i(fnm_no_leak)}')
+
+    fnm_small_user = os_join(base_path, 'users-with-empty-dataset-splits.json')
+    with open(fnm_small_user, 'w') as f:
+        json.dump(dict(leaked=too_small, no_leak=too_small_), f)
+    logger.info(f'Users with empty dataset splits saved to {pl.i(fnm_small_user)}')

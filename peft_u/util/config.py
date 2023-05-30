@@ -43,7 +43,7 @@ config_dict = dict(
         ),
         unhealthyconversations=dict(
             domain=['hate', 'abuse'],
-            labels=['0', '1'],   # TODO: change to 'healthy' and 'unhealthy'?
+            labels=['0', '1'],
             multi_label=False,
             instruction="Please review the following text and indicated if it is 'healthy' or 'unhealthy'. "
                         "Respond 'healthy' if the text is healthy and "
