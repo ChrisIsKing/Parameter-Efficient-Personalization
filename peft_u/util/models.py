@@ -58,7 +58,7 @@ def map_output_dir_nm(
 ):
     if '/' in model_name:
         org, model_name = model_name.split('/')
-    d = dict(md_nm=model_name, peft=peft_approach[0], ds=dataset_name)
+    d = dict(md_nm=model_name, peft=peft_approach, ds=dataset_name)
     date = now(fmt='short-date')
     ret = f'{date}_{pl.pa(d)}'
     if name:

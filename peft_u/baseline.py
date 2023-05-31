@@ -1,26 +1,38 @@
 import os
 import json
+import numpy as np
+import pandas as pd
+import torch
+import peft_u.util.models as model_util
 from os.path import join as os_join
 from typing import Tuple, List, Dict, Union
 from logging import Logger
 from argparse import ArgumentParser
 from functools import partial
-
-import numpy as np
-import pandas as pd
-import torch
 from torch.utils.data import DataLoader
-from peft import LoraConfig, TaskType, PrefixTuningConfig, get_peft_model, PeftConfig, PeftModel
+from peft import (
+    LoraConfig, 
+    TaskType, 
+    PrefixTuningConfig, 
+    get_peft_model, 
+    PeftConfig, 
+    PeftModel,
+    PromptTuningInit, 
+    PromptTuningConfig,
+    PromptEncoderConfig,
+)
 from transformers import (
-    AutoModelForSeq2SeqLM, AutoTokenizer, Seq2SeqTrainingArguments, Seq2SeqTrainer, get_linear_schedule_with_warmup,
+    AutoModelForSeq2SeqLM, 
+    AutoTokenizer, 
+    Seq2SeqTrainingArguments, 
+    Seq2SeqTrainer, 
+    get_linear_schedule_with_warmup,
     PreTrainedTokenizer
 )
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-
 from stefutil import *
 from peft_u.util import *
-import peft_u.util.models as model_util
 from peft_u.preprocess.load_dataset import *
 
 
@@ -39,7 +51,7 @@ def parse_args():
     train_parser.add_argument("--model", type=str, required=False, default=default_md_nm)
     train_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
     train_parser.add_argument("--leakage", type=bool, required=False, default=True)
-    train_parser.add_argument("--method", type=str, required=False, default="lora", choices=["lora", "prefix"])
+    train_parser.add_argument("--method", type=str, required=False, default="lora", choices=["lora", "prefix", "p_tuning", "prompt_tuning"])
     train_parser.add_argument("--batch_size", type=int, required=False, default=8)
     train_parser.add_argument("--num_epochs", type=int, required=False, default=8)
     train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
@@ -80,6 +92,20 @@ def load_model_n_tokenizer(
     if peft_method == 'lora':
         peft_config: PeftConfig = LoraConfig(
             task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
+        )
+    elif peft_method == 'prompt_tuning':
+        peft_config: PeftConfig = PromptTuningConfig(
+            task_type=TaskType.SEQ_2_SEQ_LM,
+            inference_mode=False,
+            num_virtual_tokens=20,
+            prompt_tuning_init=PromptTuningInit.RANDOM
+        )
+    elif peft_method == 'p_tuning':
+        peft_config: PeftConfig = PromptEncoderConfig(
+            task_type=TaskType.SEQ_2_SEQ_LM,
+            inference_mode=False,
+            num_virtual_tokens=20,
+            encoder_hidden_size=128
         )
     else:
         assert peft_method == 'prefix'
