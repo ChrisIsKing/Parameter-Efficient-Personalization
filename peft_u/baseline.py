@@ -38,7 +38,7 @@ def parse_args():
 
     train_parser.add_argument("--model", type=str, required=False, default=default_md_nm)
     train_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
-    train_parser.add_argument("--leakage", type=bool, required=False, default=False)
+    train_parser.add_argument("--leakage", type=bool, required=False, default=True)
     train_parser.add_argument("--method", type=str, required=False, default="lora", choices=["lora", "prefix"])
     train_parser.add_argument("--batch_size", type=int, required=False, default=8)
     train_parser.add_argument("--num_epochs", type=int, required=False, default=8)
@@ -51,7 +51,7 @@ def parse_args():
 
     test_parser.add_argument("--model", type=str, required=False, default=default_md_nm)
     test_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
-    test_parser.add_argument("--leakage", type=str, required=False, default=False)
+    test_parser.add_argument("--leakage", type=str, required=False, default=True)
     test_parser.add_argument("--batch_size", type=int, required=False, default=8)
     test_parser.add_argument('--personalize', type=bool, default=True)
 
@@ -65,8 +65,8 @@ def load_model_n_tokenizer(
     cache_dir = model_util.get_hf_cache_dir()
     if verbose:
         logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
-        if logger_fl:
-            logger_fl.info(f'Loading model {model_name_or_path} with cache dir {cache_dir}... ')
+    if logger_fl:
+        logger_fl.info(f'Loading model {model_name_or_path} with cache dir {cache_dir}... ')
 
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
@@ -74,6 +74,8 @@ def load_model_n_tokenizer(
 
     if verbose:
         logger.info('Loading Peft model...')
+    if logger_fl:
+        logger_fl.info('Loading Peft model...')
 
     if peft_method == 'lora':
         peft_config: PeftConfig = LoraConfig(
@@ -88,11 +90,13 @@ def load_model_n_tokenizer(
     model_meta = dict(param=model_util.get_trainable_param_meta(model), size=model_util.get_model_size(model))
     if verbose:
         logger.info(f'Model info: {pl.i(model_meta)}')
-        if logger_fl:
-            logger_fl.info(f'Model info: {model_meta}')
+    if logger_fl:
+        logger_fl.info(f'Model info: {model_meta}')
 
     if verbose:
         logger.info(f'Moving model to {pl.i(device)}...')
+    if logger_fl:
+        logger_fl.info(f'Moving model to {device}...')
     model.to(device)
     return model, tokenizer
 
@@ -259,7 +263,7 @@ def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple
 
 def test_single(
         model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: ListDataset = None, dataset_name: str = None,
-        batch_size: int = 8, tqdm_desc: str = None
+        batch_size: int = 8, tqdm_desc: str = None, user_id: str = None, logger_fl: Logger = None,
 ) -> Tuple[pd.DataFrame, float]:
     label_options = sconfig(f'datasets.{dataset_name}.labels')
     lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
@@ -287,11 +291,23 @@ def test_single(
         for i, decoded in enumerate(lst_decoded):
             i_sample = i_ba * batch_size + i
             labels = dataset[i_sample].process_target()
-            # mic(dataset[i_sample].process_template(), decoded, labels)
             labels = labels.split(', ')  # See `peft_u.preprocess.load_dataset::InputExample.process_target`
             # model may generate multiple labels; enforce an easier requirement by allowing no whitespace between labels
             # being lenient here by dropping trailing full stop
-            decoded = [d.strip().removesuffix('.') for d in decoded.split(',')]
+            decoded = [d.strip().removesuffix('.').removesuffix("'") for d in decoded.split(',')]
+
+            dec_not_in_lb = [dec for dec in decoded if dec not in label_options]
+            if len(dec_not_in_lb) > 0:
+                logger.warning(f'User {pl.i(user_id)} Predicted label(s) {pl.i(dec_not_in_lb)} not in label options')
+                if logger_fl:
+                    logger_fl.warning(f'User {user_id} Predicted label(s) {dec_not_in_lb} not in label options')
+
+                decoded = [dec for dec in decoded if dec in label_options]
+
+                if len(decoded) == 0:  # doesn't generate anything in the label options, declare prediction wrong
+                    trues[i_sample] = lb2id[labels[0]]
+                    preds[i_sample] = -1
+                    continue
 
             correct = False
             for dec in decoded:
@@ -305,7 +321,10 @@ def test_single(
 
         if i_ba + 1 == n_ba:  # last iteration
             idx_lbs = list(range(len(label_options)))
-            args = dict(labels=idx_lbs, target_names=label_options, zero_division=0, output_dict=True)
+            args = dict(
+                labels=[-1, *idx_lbs], target_names=['Label not in dataset', *label_options],
+                zero_division=0, output_dict=True
+            )
             ret = df, acc = eval_array2report_df(labels=trues, preds=preds, report_args=args, pretty=False)
             acc_str = f'{acc*100:.1f}'
             d_it['cls_acc'] = pl.i(acc_str)
@@ -316,7 +335,7 @@ def test_single(
 def _get_dataset_and_users_it(
         dataset_name: str, leakage: bool = False, uid_start_from: Union[str, int] = None
 ) -> Tuple[Dict[str, InputEgDataset], List[str]]:
-    from peft_u._dset_uid_too_small import uid_too_small
+    # from peft_u._dset_uid_too_small import uid_too_small
 
     dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage)
 
@@ -353,7 +372,7 @@ if __name__ == '__main__':
                 seed=seed, device=device, personalize=personalize,
                 output_dir=output_dir, output_path=output_path
             )
-            logger_fl = get_logger('PEFT Train', kind='file-write', file_path=os_join(output_path, 'train.log'))
+            logger_fl = get_logger('PEFT Train fl', kind='file-write', file_path=os_join(output_path, 'train.log'))
             logger.info(f'Training PEFT w/ {pl.i(d_log)}...')
             logger_fl.info(f'Training PEFT w/ {d_log}...')
 
@@ -376,8 +395,6 @@ if __name__ == '__main__':
                     it = tqdm(it, desc=f'Training on {pl.i(dataset_name)}')
 
                 for i, uid in enumerate(it, start=1):
-                    # if uid != '1':  # TODO: debugging
-                    #     continue
                     if global_tqdm:
                         d_log = dict(user=uid) | _get_dataset_sizes(dset[uid])
                         it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
@@ -387,12 +404,12 @@ if __name__ == '__main__':
                                     f'for User {pl.i(uid)}({user_ordinal})...')
                     tm_ = Timer()
 
-                    # if any dataset split is empty, skip
-                    # TODO: those users should be deterministic by each dataset processing
-                    split_sizes = _get_dataset_sizes(dset[uid])
-                    if any(v == 0 for v in split_sizes.values()):
-                        logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
-                        continue
+                    # # if any dataset split is empty, skip
+                    # # TODO: those users should be deterministic by each dataset processing
+                    # split_sizes = _get_dataset_sizes(dset[uid])
+                    # if any(v == 0 for v in split_sizes.values()):
+                    #     logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
+                    #     continue
 
                     # reload model for each user
                     model, tokenizer = load_model_n_tokenizer(model_name_or_path, **md_load_args)
@@ -406,12 +423,7 @@ if __name__ == '__main__':
                         logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
                     logger_fl.info(f'Training for User {uid} done in {t_e_}')
             else:
-                model, tokenizer = load_model_n_tokenizer(model_name_or_path, **md_load_args, verbose=True)
-                train_single(
-                    model=model, tokenizer=tokenizer, dataset=dset, device=device,
-                    batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
-                    weight_decay=weight_decay, output_path=output_path
-                )
+                raise NotImplementedError('Non personalized train')
             t_e = tm.end()
             logger.info(f'Training done in {pl.i(t_e)}')
             logger_fl.info(f'Training done in {t_e}')
@@ -430,34 +442,38 @@ if __name__ == '__main__':
                 personalize=personalize, batch_size=bsz
             )
             logger.info(f'Testing PEFT w/ {pl.i(d_log)}...')
+            logger_fl = get_logger('PEFT Test fl', kind='file-write', file_path=os_join(eval_output_path, 'test.log'))
+            logger_fl.info(f'Testing PEFT w/ {d_log}...')
 
+            tm = Timer()
             if personalize:
                 dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage)
                 n_user = len(it)
                 model_name_or_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
 
                 logger.info(f'Testing on users {pl.i(it)}... ')
+                logger_fl.info(f'Testing on users {it}... ')
 
                 accs = dict()
                 for i, uid in enumerate(it, start=1):
                     ts = ListDataset(dset[uid].test)
                     # logger.info(f'Testing personalized PEFT for User {pl.i(uid)} w/ test split size {pl.i(len(ts))}...')
                     user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
-                    desc = f'Testing on User {pl.i(uid)}({user_ordinal})'
+                    desc = f'{pl.i(now())} Testing on User {pl.i(uid)}({user_ordinal})'
 
                     user_str = f'User-{uid}'
                     path = os_join(model_name_or_path, user_str, 'trained')
-                    # assert os.path.exists(path)  # sanity check
-                    if not os.path.exists(path) or len(ts) == 0:
-                        # TODO: see issue in training, empty split sizes
-                        logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
-                        continue
+                    assert os.path.exists(path)  # sanity check
+                    # if not os.path.exists(path) or len(ts) == 0:
+                    #     # TODO: see issue in training, empty split sizes
+                    #     logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
+                    #     continue
 
                     model, tokenizer = load_trained(model_name_or_path=path)
 
                     df, acc = test_single(
                         model=model, tokenizer=tokenizer, dataset=ts, batch_size=bsz,
-                        dataset_name=dataset_name, tqdm_desc=desc
+                        dataset_name=dataset_name, tqdm_desc=desc, user_id=uid, logger_fl=logger_fl
                     )
                     path = os_join(eval_output_path, f'{user_str}.csv')
                     df.to_csv(path)
@@ -466,8 +482,11 @@ if __name__ == '__main__':
                 acc_avg = np.mean(list(accs.values()))
                 acc_avg_str = f'{acc_avg*100:.1f}'
                 logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg_str)}')
+                logger_fl.info(f'Dataset {dataset_name} macro-avg acc: {acc_avg_str}')
                 with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
                     json.dump(accs, f, indent=4)
             else:
                 raise NotImplementedError('Non personalized test')
+            t_e = tm.end()
+            logger.info(f'Testing done in {pl.i(t_e)}')
     run()

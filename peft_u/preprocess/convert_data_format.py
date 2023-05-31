@@ -132,7 +132,6 @@ def data2dataset_splits(
 
     if drop_threshold is not None:
         uid2sample_sz = {uid: sum([len(d) for d in u_data.values()]) for uid, u_data in user_data.items()}
-        # mic(uid2sample_sz)
         user_data = {uid: u_data for uid, u_data in user_data.items() if uid2sample_sz[uid] >= drop_threshold}
 
     small_user_meta = {uid: u_data for uid, u_data in user_data.items() if any(len(d_) == 0 for d_ in u_data.values())}
