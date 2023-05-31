@@ -1,5 +1,6 @@
 venv
 data/*/user_data*
+data/*/users-with-empty-dataset-splits.json
 __pycache__
 __MACOSX
 .DS_Store
