@@ -56,8 +56,8 @@
                 "abuse"
             ],
             "labels": [
-                "0",
-                "1"
+                "healthy",
+                "unhealthy"
             ],
             "multi_label": false,
             "instruction": "Please review the following text and indicated if it is 'healthy' or 'unhealthy'. Respond 'healthy' if the text is healthy and 'unhealthy' if the text can be considered hostile, antagonistic, condescending, dismissive or an unfair generalization."

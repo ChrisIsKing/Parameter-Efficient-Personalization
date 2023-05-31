@@ -43,7 +43,7 @@ config_dict = dict(
         ),
         unhealthyconversations=dict(
             domain=['hate', 'abuse'],
-            labels=['0', '1'],
+            labels=['healthy', 'unhealthy'],
             multi_label=False,
             instruction="Please review the following text and indicated if it is 'healthy' or 'unhealthy'. "
                         "Respond 'healthy' if the text is healthy and "
@@ -89,16 +89,26 @@ config_dict = dict(
         ),
         subjectivediscourse_response=dict(
             domain=['discourse'],
+            labels=[
+                'answer', 'answer_overans-sway', 'cant-answer-lying', 'cant-answer-sincere',
+                'shift-correct', 'shift-dodge'
+            ],
+            multi_label=False,
             instruction="Please analyze the following text and indicate how the witness responded to the question. "
                         "Respond with 'answer' if they answered the question reasonably, "
                         "'cant-answer-lying' if they could not answer and are lying, "
-                        "'can't answer-sincere' if they could not answer but are honest about it, "
+                        "'cant-answer-sincere' if they could not answer but are honest about it, "
                         "'shift-dodge' if they shifted the topic with the intent of dodging the question, "
                         "'answer_overans-sway' if they over answered the question with the intention of swaying "
                         "or 'shift-correct' if they shifted the topic with the intention of clarifying the question."
         ),
         subjectivediscourse_question_sentiment=dict(
             domain=['response sentiment'],
+            labels=[
+                'negative', 'neutral', 'positive',
+                'somewhatNegative', 'somewhatPositive', 'veryNegative', 'veryPositive'
+            ],
+            multi_label=False,
             instruction="Please analyze the following text and rate your sentiment towards the questioners. "
                         "Sentiment labels include 'somewhatPositive', 'positive', 'veryPositive', 'somewhatNegative', "
                         "'veryNegative', 'neutral' and 'negative'. "
@@ -106,6 +116,11 @@ config_dict = dict(
         ),
         subjectivediscourse_response_sentiment=dict(
             domain=['response sentiment'],
+            labels=[
+                'negative', 'neutral', 'positive',
+                'somewhatNegative', 'somewhatPositive', 'veryNegative', 'veryPositive'
+            ],
+            multi_label=False,
             instruction="Please analyze the following text and rate your sentiment towards the witness. "
                         "Sentiment labels include 'somewhatPositive', 'positive', 'veryPositive', 'somewhatNegative', "
                         "'veryNegative', 'neutral' and 'negative'. "

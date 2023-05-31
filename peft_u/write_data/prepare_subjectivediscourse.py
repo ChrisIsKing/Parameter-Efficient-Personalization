@@ -1,3 +1,4 @@
+import os
 import ast
 from os.path import join as os_join
 from collections import defaultdict
@@ -13,36 +14,47 @@ logger = get_logger('Subjective Discourse Write')
 
 
 if __name__ == '__main__':
-    dset_base_path = os_join(u.proj_path, u.dset_dir, 'subjectivediscourse')
+    def run(label_key: str = 'response'):
+        ca.check_mismatch('Classification type', label_key, ['response', 'question_sentiment', 'response_sentiment'])
 
-    data_path = os_join(dset_base_path, 'with_features_annotated_questions_responses_gold.tsv')
-    data, headers = load_csv(data_path, delimiter='\t', header=True)
+        dnm = 'subjectivediscourse'
+        data_path = os_join(u.proj_path, u.dset_dir, dnm, 'with_features_annotated_questions_responses_gold.tsv')
+        data, headers = load_csv(data_path, delimiter='\t', header=True)
 
-    user_data = defaultdict(dict)
+        user_data = defaultdict(dict)
+        label_set, sentiment_set = set(), set()
 
-    label_set, sentiment_set = set(), set()
+        for row in tqdm(data, desc='Processing data'):
+            post_id = row[3]
+            users = ast.literal_eval(row[17])
 
-    for row in tqdm(data, desc='Processing data'):
-        post_id = row[3]
-        users = ast.literal_eval(row[17])
-        labels = ast.literal_eval(row[11])
-        q_sentiments = ast.literal_eval(row[21])
-        r_sentiments = ast.literal_eval(row[18])
-        text = '%s \n %s \n %s \n %s' % (row[5], row[6], row[7], row[8])
+            labels = ast.literal_eval(row[11])
+            q_sentiments = ast.literal_eval(row[21])
+            r_sentiments = ast.literal_eval(row[18])
+            text = '%s \n %s \n %s \n %s' % (row[5], row[6], row[7], row[8])
 
-        for label in labels:
-            label_set.add(label)
+            for label in labels:
+                label_set.add(label)
+            for sentiment in q_sentiments:
+                sentiment_set.add(sentiment)
+            for sentiment in r_sentiments:
+                sentiment_set.add(sentiment)
 
-        for sentiment in q_sentiments:
-            sentiment_set.add(sentiment)
+            for i, user in enumerate(users):
+                if label_key == 'response':
+                    label = [labels[i]]
+                elif label_key == 'question_sentiment':
+                    label = [q_sentiments[i]]
+                else:
+                    assert label_key == 'response_sentiment'
+                    label = [r_sentiments[i]]
 
-        for sentiment in r_sentiments:
-            sentiment_set.add(sentiment)
-
-        for i, user in enumerate(users):
-            user_data[user][post_id] = dict(
-                text=text, label=[labels[i]], q_sentiment=[q_sentiments[i]], r_sentiment=[r_sentiments[i]]
-            )
-
-    save_datasets(data=user_data, base_path=dset_base_path)
-    logger.info(pl.i({'Label Set': sorted(label_set), 'Sentiment Set': sorted(sentiment_set)}))
+                user_data[user][post_id] = dict(text=text, label=label)
+        dset_out_path = os_join(u.proj_path, u.dset_dir, f'{dnm}_{label_key}')
+        os.makedirs(dset_out_path, exist_ok=True)
+        save_datasets(data=user_data, base_path=dset_out_path)
+        logger.info(pl.i({'Label Set': sorted(label_set), 'Sentiment Set': sorted(sentiment_set)}))
+        mic(data2label_meta(data=user_data))
+    # run(label_key='response')
+    # run(label_key='question_sentiment')
+    run(label_key='response_sentiment')
