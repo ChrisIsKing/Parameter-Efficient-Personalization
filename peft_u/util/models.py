@@ -9,7 +9,7 @@ from peft_u.util.util import *
 
 __all__ = [
     'get_trainable_param_meta', 'get_model_size',
-    'hf_custom_model_cache_dir', 'get_hf_cache_dir'
+    'hf_model_name_drop_org', 'hf_custom_model_cache_dir', 'get_hf_cache_dir'
 ]
 
 
@@ -53,11 +53,16 @@ def get_model_size(model: torch.nn.Module, fmt='str', all_only: bool = True):
     return ret['size_all'] if all_only else ret
 
 
+def hf_model_name_drop_org(model_name: str) -> str:
+    if '/' in model_name:
+        org, model_name = model_name.split('/')
+    return model_name
+
+
 def map_output_dir_nm(
         model_name: str = None, name: str = None, peft_approach: str = None, dataset_name: str = None
 ):
-    if '/' in model_name:
-        org, model_name = model_name.split('/')
+    model_name = hf_model_name_drop_org(model_name)
     d = dict(md_nm=model_name, peft=peft_approach, ds=dataset_name)
     date = now(fmt='short-date')
     ret = f'{date}_{pl.pa(d)}'

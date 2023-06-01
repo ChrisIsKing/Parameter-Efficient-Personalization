@@ -1,14 +1,14 @@
 import os
 import json
-import numpy as np
-import pandas as pd
-import torch
-import peft_u.util.models as model_util
 from os.path import join as os_join
 from typing import Tuple, List, Dict, Union
 from logging import Logger
 from argparse import ArgumentParser
 from functools import partial
+
+import numpy as np
+import pandas as pd
+import torch
 from torch.utils.data import DataLoader
 from peft import (
     LoraConfig, 
@@ -31,12 +31,17 @@ from transformers import (
 )
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+
 from stefutil import *
 from peft_u.util import *
+import peft_u.util.models as model_util
 from peft_u.preprocess.load_dataset import *
 
 
-logger = get_logger('PEFT Train')
+logger = get_logger('PEFT Baseline')
+
+
+methods = ["lora", "prefix", "p_tuning", "prompt_tuning"]
 
 
 def parse_args():
@@ -51,7 +56,7 @@ def parse_args():
     train_parser.add_argument("--model", type=str, required=False, default=default_md_nm)
     train_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
     train_parser.add_argument("--leakage", type=bool, required=False, default=True)
-    train_parser.add_argument("--method", type=str, required=False, default="lora", choices=["lora", "prefix", "p_tuning", "prompt_tuning"])
+    train_parser.add_argument("--method", type=str, required=False, default="lora", choices=methods)
     train_parser.add_argument("--batch_size", type=int, required=False, default=8)
     train_parser.add_argument("--num_epochs", type=int, required=False, default=8)
     train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
@@ -62,6 +67,9 @@ def parse_args():
     train_parser.add_argument('--personalize', type=bool, required=False, default=True)
 
     test_parser.add_argument("--model", type=str, required=False, default=default_md_nm)
+    test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
+    # method for zeroshot
+    # test_parser.add_argument("--method", type=str, required=False, default=None, choices=methods)
     test_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
     test_parser.add_argument("--leakage", type=str, required=False, default=True)
     test_parser.add_argument("--batch_size", type=int, required=False, default=8)
@@ -84,35 +92,38 @@ def load_model_n_tokenizer(
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     tokenizer.model_max_length = 512
 
-    if verbose:
-        logger.info('Loading Peft model...')
-    if logger_fl:
-        logger_fl.info('Loading Peft model...')
+    if peft_method is not None:
+        ca.check_mismatch('PEFT method', peft_method, methods)
+        if verbose:
+            logger.info('Loading Peft model...')
+        if logger_fl:
+            logger_fl.info('Loading Peft model...')
 
-    if peft_method == 'lora':
-        peft_config: PeftConfig = LoraConfig(
-            task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
-        )
-    elif peft_method == 'prompt_tuning':
-        peft_config: PeftConfig = PromptTuningConfig(
-            task_type=TaskType.SEQ_2_SEQ_LM,
-            inference_mode=False,
-            num_virtual_tokens=20,
-            prompt_tuning_init=PromptTuningInit.RANDOM
-        )
-    elif peft_method == 'p_tuning':
-        peft_config: PeftConfig = PromptEncoderConfig(
-            task_type=TaskType.SEQ_2_SEQ_LM,
-            inference_mode=False,
-            num_virtual_tokens=20,
-            encoder_hidden_size=128
-        )
-    else:
-        assert peft_method == 'prefix'
-        peft_config: PeftConfig = PrefixTuningConfig(
-            task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, num_virtual_tokens=20
-        )
-    model = get_peft_model(model, peft_config)
+        if peft_method == 'lora':
+            peft_config: PeftConfig = LoraConfig(
+                task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
+            )
+        elif peft_method == 'prompt_tuning':
+            peft_config: PeftConfig = PromptTuningConfig(
+                task_type=TaskType.SEQ_2_SEQ_LM,
+                inference_mode=False,
+                num_virtual_tokens=20,
+                prompt_tuning_init=PromptTuningInit.RANDOM
+            )
+        elif peft_method == 'p_tuning':
+            peft_config: PeftConfig = PromptEncoderConfig(
+                task_type=TaskType.SEQ_2_SEQ_LM,
+                inference_mode=False,
+                num_virtual_tokens=20,
+                encoder_hidden_size=128
+            )
+        else:
+            assert peft_method == 'prefix'
+            peft_config: PeftConfig = PrefixTuningConfig(
+                task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, num_virtual_tokens=20
+            )
+        model = get_peft_model(model, peft_config)
+
     model_meta = dict(param=model_util.get_trainable_param_meta(model), size=model_util.get_model_size(model))
     if verbose:
         logger.info(f'Model info: {pl.i(model_meta)}')
@@ -458,14 +469,23 @@ if __name__ == '__main__':
             model_name_or_path = args.model
             dataset_name, leakage, personalize = args.dataset_name, args.leakage, args.personalize
             bsz = args.batch_size
+            zeroshot = args.zeroshot
+            # zeroshot, method = args.zeroshot, args.method
+            # if zeroshot:
+            #     assert method is not None
 
             date = now(fmt='short-date')
-            eval_output_path = os_join(u.eval_path, f'{model_name_or_path}_Eval-{date}')
+            if zeroshot:
+                eval_out_str = f'{date}_ZeroShot-Eval_{{md={model_util.hf_model_name_drop_org(model_name_or_path)}}}'
+            else:
+                eval_out_str = f'{model_name_or_path}_Eval-{date}'
+            eval_output_path = os_join(u.eval_path, eval_out_str)
             os.makedirs(eval_output_path, exist_ok=True)
 
             d_log = dict(
                 model_name_or_path=model_name_or_path, dataset_name=dataset_name, leakage=leakage,
-                personalize=personalize, batch_size=bsz
+                personalize=personalize, batch_size=bsz, zeroshot=zeroshot,
+                # method=method
             )
             logger.info(f'Testing PEFT w/ {pl.i(d_log)}...')
             logger_fl = get_logger('PEFT Test fl', kind='file-write', file_path=os_join(eval_output_path, 'test.log'))
@@ -473,9 +493,19 @@ if __name__ == '__main__':
 
             tm = Timer()
             if personalize:
+                model, tokenizer = None, None
+                if zeroshot:  # Load global model for all users
+                    # load_args = dict(peft_method=method, verbose=True, logger_fl=logger_fl)
+                    load_args = dict(verbose=True, logger_fl=logger_fl)
+                    model, tokenizer = load_model_n_tokenizer(model_name_or_path=model_name_or_path, **load_args)
+                    model.eval()
+
                 dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage)
                 n_user = len(it)
-                model_name_or_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
+                path_ = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
+                if not os.path.exists(path_):
+                    path_ = model_name_or_path  # reset
+                model_name_or_path = path_
 
                 logger.info(f'Testing on users {pl.i(it)}... ')
                 logger_fl.info(f'Testing on users {it}... ')
@@ -485,17 +515,18 @@ if __name__ == '__main__':
                     ts = ListDataset(dset[uid].test)
                     # logger.info(f'Testing personalized PEFT for User {pl.i(uid)} w/ test split size {pl.i(len(ts))}...')
                     user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
-                    desc = f'{pl.i(now())} Testing on User {pl.i(uid)}({user_ordinal})'
+                    desc = f'{pl.i(now(for_path=True, color=True))} Testing on User {pl.i(uid)}({user_ordinal})'
 
                     user_str = f'User-{uid}'
-                    path = os_join(model_name_or_path, user_str, 'trained')
-                    assert os.path.exists(path)  # sanity check
+                    if not zeroshot:  # load trained model for each user
+                        path = os_join(model_name_or_path, user_str, 'trained')
+                        assert os.path.exists(path)  # sanity check
+
+                        model, tokenizer = load_trained(model_name_or_path=path)
                     # if not os.path.exists(path) or len(ts) == 0:
                     #     # TODO: see issue in training, empty split sizes
                     #     logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
                     #     continue
-
-                    model, tokenizer = load_trained(model_name_or_path=path)
 
                     df, acc = test_single(
                         model=model, tokenizer=tokenizer, dataset=ts, batch_size=bsz,
@@ -515,4 +546,5 @@ if __name__ == '__main__':
                 raise NotImplementedError('Non personalized test')
             t_e = tm.end()
             logger.info(f'Testing done in {pl.i(t_e)}')
+            logger_fl.info(f'Testing done in {t_e}')
     run()

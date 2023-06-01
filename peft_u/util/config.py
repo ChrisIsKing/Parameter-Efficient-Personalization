@@ -106,24 +106,24 @@ config_dict = dict(
             domain=['response sentiment'],
             labels=[
                 'negative', 'neutral', 'positive',
-                'somewhatNegative', 'somewhatPositive', 'veryNegative', 'veryPositive'
+                'somewhat-negative', 'somewhat-positive', 'very-negative', 'very-positive'
             ],
             multi_label=False,
             instruction="Please analyze the following text and rate your sentiment towards the questioners. "
-                        "Sentiment labels include 'somewhatPositive', 'positive', 'veryPositive', 'somewhatNegative', "
-                        "'veryNegative', 'neutral' and 'negative'. "
+                        "Sentiment labels include 'somewhat-positive', 'positive', 'very-positive', "
+                        "'somewhat-negative', 'very-negative', 'neutral' and 'negative'. "
                         "Respond with the sentiment label that best captures your sentiment towards the questioners."
         ),
         subjectivediscourse_response_sentiment=dict(
             domain=['response sentiment'],
             labels=[
                 'negative', 'neutral', 'positive',
-                'somewhatNegative', 'somewhatPositive', 'veryNegative', 'veryPositive'
+                'somewhat-negative', 'somewhat-positive', 'very-negative', 'very-positive'
             ],
             multi_label=False,
             instruction="Please analyze the following text and rate your sentiment towards the witness. "
-                        "Sentiment labels include 'somewhatPositive', 'positive', 'veryPositive', 'somewhatNegative', "
-                        "'veryNegative', 'neutral' and 'negative'. "
+                        "Sentiment labels include 'somewhat-positive', 'positive', 'very-positive', "
+                        "'somewhat-negative', 'very-negative', 'neutral' and 'negative'. "
                         "Respond with the sentiment label that best captures your sentiment towards the witness."
         )
     )

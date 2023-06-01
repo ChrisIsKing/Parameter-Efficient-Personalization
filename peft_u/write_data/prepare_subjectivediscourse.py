@@ -23,6 +23,15 @@ if __name__ == '__main__':
 
         user_data = defaultdict(dict)
         label_set, sentiment_set = set(), set()
+        _label_map = dict(
+            somewhatNegative='somewhat-negative',
+            somewhatPositive='somewhat-positive',
+            veryNegative='very-negative',
+            veryPositive='very-positive'
+        )
+
+        def label_map(x: str) -> str:
+            return _label_map.get(x, x)
 
         for row in tqdm(data, desc='Processing data'):
             post_id = row[3]
@@ -44,10 +53,10 @@ if __name__ == '__main__':
                 if label_key == 'response':
                     label = [labels[i]]
                 elif label_key == 'question_sentiment':
-                    label = [q_sentiments[i]]
+                    label = [label_map(q_sentiments[i])]
                 else:
                     assert label_key == 'response_sentiment'
-                    label = [r_sentiments[i]]
+                    label = [label_map(r_sentiments[i])]
 
                 user_data[user][post_id] = dict(text=text, label=label)
         dset_out_path = os_join(u.proj_path, u.dset_dir, f'{dnm}_{label_key}')
