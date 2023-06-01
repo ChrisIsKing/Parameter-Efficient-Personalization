@@ -64,6 +64,6 @@ if __name__ == '__main__':
         save_datasets(data=user_data, base_path=dset_out_path)
         logger.info(pl.i({'Label Set': sorted(label_set), 'Sentiment Set': sorted(sentiment_set)}))
         mic(data2label_meta(data=user_data))
-    # run(label_key='response')
-    # run(label_key='question_sentiment')
+    run(label_key='response')
+    run(label_key='question_sentiment')
     run(label_key='response_sentiment')

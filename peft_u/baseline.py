@@ -476,7 +476,8 @@ if __name__ == '__main__':
 
             date = now(fmt='short-date')
             if zeroshot:
-                eval_out_str = f'{date}_ZeroShot-Eval_{{md={model_util.hf_model_name_drop_org(model_name_or_path)}}}'
+                d = dict(md=model_util.hf_model_name_drop_org(model_name_or_path), dnm=dataset_name)
+                eval_out_str = f'{date}_ZeroShot-Eval_{pl.pa(d)}'
             else:
                 eval_out_str = f'{model_name_or_path}_Eval-{date}'
             eval_output_path = os_join(u.eval_path, eval_out_str)

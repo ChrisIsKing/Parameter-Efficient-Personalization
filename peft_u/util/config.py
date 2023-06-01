@@ -52,6 +52,8 @@ config_dict = dict(
         ),
         wikidetox=dict(
             domain=['hate', 'abuse'],
+            labels=['Aggressive', 'Normal'],
+            multi_label=False,
             instruction="Please review the following text "
                         "and indicate if it has the presence of malicious remark to a person or group. "
                         "Respond 'Aggressive' if the text contains a personal attack "
