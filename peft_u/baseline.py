@@ -409,13 +409,16 @@ if __name__ == '__main__':
                 seed=seed, device=device, personalize=personalize,
                 output_dir=output_dir, output_path=output_path
             )
-            logger_fl = get_logger('PEFT Train fl', kind='file-write', file_path=os_join(output_path, 'train.log'))
+            fnm = os_join(output_path, f'train_{now(for_path=True)}.log')
+            logger_fl = get_logger('PEFT Train fl', kind='file-write', file_path=fnm)
             logger.info(f'Training PEFT w/ {pl.i(d_log)}...')
             logger_fl.info(f'Training PEFT w/ {d_log}...')
 
             # strt = 47  # goemotion
             # strt = 28  # hatexplain
-            # strt = 127  # measuringhatespeech
+            # strt = 5021  # measuringhatespeech
+            # strt = 56   # `cockamamie`
+            # strt = 287  # `wikidetox`
             strt = None
             dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage, uid_start_from=strt)
             md_load_args = dict(peft_method=method, device=device, logger_fl=logger_fl)
@@ -489,7 +492,8 @@ if __name__ == '__main__':
                 # method=method
             )
             logger.info(f'Testing PEFT w/ {pl.i(d_log)}...')
-            logger_fl = get_logger('PEFT Test fl', kind='file-write', file_path=os_join(eval_output_path, 'test.log'))
+            fnm = os_join(eval_output_path, f'test_{now(for_path=True)}.log')
+            logger_fl = get_logger('PEFT Test fl', kind='file-write', file_path=fnm)
             logger_fl.info(f'Testing PEFT w/ {d_log}...')
 
             tm = Timer()
@@ -501,7 +505,9 @@ if __name__ == '__main__':
                     model, tokenizer = load_model_n_tokenizer(model_name_or_path=model_name_or_path, **load_args)
                     model.eval()
 
-                dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage)
+                # strt = 29044976  # unhealthyconversations
+                strt = None
+                dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage, uid_start_from=strt)
                 n_user = len(it)
                 path_ = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
                 if not os.path.exists(path_):
