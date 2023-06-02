@@ -1,7 +1,7 @@
 import os
 import json
 from os.path import join as os_join
-from typing import Tuple, List, Dict, Union
+from typing import Tuple, List, Dict, Union, Callable
 from logging import Logger
 from argparse import ArgumentParser
 from functools import partial
@@ -298,6 +298,19 @@ def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple
     return model, tokenizer
 
 
+def _lenient_decoded(allowed_suffixes: List[str] = None) -> Callable[[str], str]:
+    """
+    enforce an easier requirement by allowing no whitespace between labels,
+        & being lenient here by dropping trailing full stop, quotes, verb suffixes, etc.
+    """
+    def _ret(decoded: str) -> str:
+        ret = decoded.strip()
+        for suf in (allowed_suffixes or []):
+            ret = ret.removesuffix(suf)
+        return ret
+    return _ret
+
+
 def test_single(
         model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: ListDataset = None, dataset_name: str = None,
         batch_size: int = 8, tqdm_desc: str = None, user_id: str = None, logger_fl: Logger = None,
@@ -316,6 +329,8 @@ def test_single(
 
     ret = None
     n_ba = len(ts_dl)
+    lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed'])
+
     for i_ba, inputs in enumerate(it):
         inputs = {k: v for k, v in inputs.items()}
         inputs.pop('labels')
@@ -329,9 +344,8 @@ def test_single(
             i_sample = i_ba * batch_size + i
             labels = dataset[i_sample].process_target()
             labels = labels.split(', ')  # See `peft_u.preprocess.load_dataset::InputExample.process_target`
-            # model may generate multiple labels; enforce an easier requirement by allowing no whitespace between labels
-            # being lenient here by dropping trailing full stop
-            decoded = [d.strip().removesuffix('.').removesuffix("'") for d in decoded.split(',')]
+            # model may generate multiple labels
+            decoded = [lenient(d) for d in decoded.split(',')]
 
             dec_not_in_lb = [dec for dec in decoded if dec not in label_options]
             if len(dec_not_in_lb) > 0:
