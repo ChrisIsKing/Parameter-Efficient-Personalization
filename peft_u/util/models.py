@@ -63,7 +63,7 @@ def map_output_dir_nm(
         model_name: str = None, name: str = None, peft_approach: str = None, dataset_name: str = None
 ):
     model_name = hf_model_name_drop_org(model_name)
-    d = dict(md_nm=model_name, peft=peft_approach, ds=dataset_name)
+    d = dict(md_nm=model_name, ds=dataset_name, peft=peft_approach)
     date = now(fmt='short-date')
     ret = f'{date}_{pl.pa(d)}'
     if name:
