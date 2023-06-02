@@ -155,12 +155,16 @@ def load_dataset_with_prompts(
         )
 
 
-def iter_users(dataset: Dict[str, Any], start_from: Union[str, int] = None, filter_fn: Callable = None):
+def iter_users(
+        dataset: Dict[str, Any], start_from: Union[str, int] = None, end_at: Union[str, int] = None,
+        filter_fn: Callable = None
+):
     """
     Deterministic ordering  of user ids
 
     :param dataset: dataset dict
     :param start_from: user id to start from, inclusive
+    :param end_at: user id to end at, inclusive
     :param filter_fn: filter function to apply to user ids
     """
     ret = sort_user_ids(list(dataset.keys()))
@@ -169,8 +173,15 @@ def iter_users(dataset: Dict[str, Any], start_from: Union[str, int] = None, filt
             assert start_from.isdigit()
         else:
             start_from = str(start_from)
-        idx = ret.index(start_from)
-        ret = ret[idx:]  # remove ids before `start_from`
+        idx_strt = ret.index(start_from)
+        ret = ret[idx_strt:]  # remove ids before `start_from`
+    if end_at is not None:
+        if isinstance(end_at, str):
+            assert end_at.isdigit()
+        else:
+            end_at = str(end_at)
+        idx_end = ret.index(end_at)  # remove ids after `end_at`
+        ret = ret[:idx_end+1]
     if filter_fn is not None:
         ret = [uid for uid in ret if filter_fn(uid)]
     return ret
