@@ -10,6 +10,14 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
+from transformers import (
+    AutoModelForSeq2SeqLM,
+    AutoTokenizer,
+    Seq2SeqTrainingArguments,
+    Seq2SeqTrainer,
+    get_linear_schedule_with_warmup,
+    PreTrainedTokenizer
+)
 from peft import (
     LoraConfig, 
     TaskType, 
@@ -20,14 +28,6 @@ from peft import (
     PromptTuningInit, 
     PromptTuningConfig,
     PromptEncoderConfig,
-)
-from transformers import (
-    AutoModelForSeq2SeqLM, 
-    AutoTokenizer, 
-    Seq2SeqTrainingArguments, 
-    Seq2SeqTrainer, 
-    get_linear_schedule_with_warmup,
-    PreTrainedTokenizer
 )
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
@@ -41,7 +41,9 @@ from peft_u.preprocess.load_dataset import *
 logger = get_logger('PEFT Baseline')
 
 
-methods = ["lora", "prefix", "p_tuning", "prompt_tuning"]
+HF_MODEL_NAME = 'google/flan-t5-base'
+peft_methods = ["lora", "prefix", "p_tuning", "prompt_tuning"]
+DEFAULT_PEFT_METHOD = 'lora'
 
 
 def parse_args():
@@ -50,13 +52,12 @@ def parse_args():
     train_parser = subparsers.add_parser("train")
     test_parser = subparsers.add_parser("test")
 
-    default_md_nm = 'google/flan-t5-base'
     dataset_names = list(sconfig('datasets'))
 
-    train_parser.add_argument("--model", type=str, required=False, default=default_md_nm)
+    train_parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
     train_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
     train_parser.add_argument("--leakage", type=bool, required=False, default=True)
-    train_parser.add_argument("--method", type=str, required=False, default="lora", choices=methods)
+    train_parser.add_argument("--method", type=str, required=False, default=DEFAULT_PEFT_METHOD, choices=peft_methods)
     train_parser.add_argument("--batch_size", type=int, required=False, default=8)
     train_parser.add_argument("--num_epochs", type=int, required=False, default=8)
     train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
@@ -66,7 +67,7 @@ def parse_args():
     train_parser.add_argument("--output_dir", type=str, required=False, default=None)
     train_parser.add_argument('--personalize', type=bool, required=False, default=True)
 
-    test_parser.add_argument("--model", type=str, required=False, default=default_md_nm)
+    test_parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
     test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
     # method for zeroshot
     # test_parser.add_argument("--method", type=str, required=False, default=None, choices=methods)
@@ -79,8 +80,8 @@ def parse_args():
 
 
 def load_model_n_tokenizer(
-        model_name_or_path: str, peft_method: str = None, device: str = 'cuda', verbose: bool = False,
-        logger_fl: Logger = None
+        model_name_or_path: str = HF_MODEL_NAME, peft_method: str = DEFAULT_PEFT_METHOD,
+        device: str = 'cuda', verbose: bool = False, logger_fl: Logger = None
 ) -> Tuple[PeftModel, PreTrainedTokenizer]:
     cache_dir = model_util.get_hf_cache_dir()
     if verbose:
@@ -93,35 +94,24 @@ def load_model_n_tokenizer(
     tokenizer.model_max_length = 512
 
     if peft_method is not None:
-        ca.check_mismatch('PEFT method', peft_method, methods)
+        ca.check_mismatch('PEFT method', peft_method, peft_methods)
         if verbose:
             logger.info('Loading Peft model...')
         if logger_fl:
             logger_fl.info('Loading Peft model...')
 
+        config_d = dict(task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False)
         if peft_method == 'lora':
-            peft_config: PeftConfig = LoraConfig(
-                task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
-            )
-        elif peft_method == 'prompt_tuning':
-            peft_config: PeftConfig = PromptTuningConfig(
-                task_type=TaskType.SEQ_2_SEQ_LM,
-                inference_mode=False,
-                num_virtual_tokens=20,
-                prompt_tuning_init=PromptTuningInit.RANDOM
-            )
-        elif peft_method == 'p_tuning':
-            peft_config: PeftConfig = PromptEncoderConfig(
-                task_type=TaskType.SEQ_2_SEQ_LM,
-                inference_mode=False,
-                num_virtual_tokens=20,
-                encoder_hidden_size=128
-            )
+            peft_config = LoraConfig(**config_d, r=8, lora_alpha=32, lora_dropout=0.1)
         else:
-            assert peft_method == 'prefix'
-            peft_config: PeftConfig = PrefixTuningConfig(
-                task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, num_virtual_tokens=20
-            )
+            config_d['num_virtual_tokens'] = 20
+            if peft_method == 'prefix':
+                peft_config = PrefixTuningConfig(**config_d)
+            elif peft_method == 'p_tuning':
+                peft_config: PeftConfig = PromptEncoderConfig(**config_d, encoder_hidden_size=128)
+            else:
+                assert peft_method == 'prompt_tuning'
+                peft_config: PeftConfig = PromptTuningConfig(**config_d, prompt_tuning_init=PromptTuningInit.RANDOM)
         model = get_peft_model(model, peft_config)
 
     model_meta = dict(param=model_util.get_trainable_param_meta(model), size=model_util.get_model_size(model))
@@ -130,11 +120,12 @@ def load_model_n_tokenizer(
     if logger_fl:
         logger_fl.info(f'Model info: {model_meta}')
 
-    if verbose:
-        logger.info(f'Moving model to {pl.i(device)}...')
-    if logger_fl:
-        logger_fl.info(f'Moving model to {device}...')
-    model.to(device)
+    if torch.cuda.is_available() and device == 'cuda':
+        if verbose:
+            logger.info(f'Moving model to {pl.i(device)}...')
+        if logger_fl:
+            logger_fl.info(f'Moving model to {device}...')
+        model.to(device)
     return model, tokenizer
 
 
@@ -298,15 +289,21 @@ def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple
     return model, tokenizer
 
 
-def _lenient_decoded(allowed_suffixes: List[str] = None) -> Callable[[str], str]:
+def _lenient_decoded(allowed_suffixes: List[str] = None, label_options: List[str] = None) -> Callable[[str], str]:
     """
     enforce an easier requirement by allowing no whitespace between labels,
         & being lenient here by dropping trailing full stop, quotes, verb suffixes, etc.
+
+    If `label_options` is provided, and the decoded is a substring of one of the labels, that label is returned
     """
     def _ret(decoded: str) -> str:
         ret = decoded.strip()
         for suf in (allowed_suffixes or []):
             ret = ret.removesuffix(suf)
+
+        for lb in (label_options or []):
+            if ret in lb:
+                return lb
         return ret
     return _ret
 
@@ -329,7 +326,7 @@ def test_single(
 
     ret = None
     n_ba = len(ts_dl)
-    lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed'])
+    lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed'], label_options=label_options)
 
     for i_ba, inputs in enumerate(it):
         inputs = {k: v for k, v in inputs.items()}
@@ -401,7 +398,7 @@ def _get_dataset_and_users_it(
 
 
 if __name__ == '__main__':
-    def run():
+    def command_prompt():
         args = parse_args()
         cmd = args.mode
         if cmd == 'train':
@@ -568,4 +565,22 @@ if __name__ == '__main__':
             t_e = tm.end()
             logger.info(f'Testing done in {pl.i(t_e)}')
             logger_fl.info(f'Testing done in {t_e}')
-    run()
+    # command_prompt()
+
+    def try_generate():
+        md_nm = HF_MODEL_NAME
+        # md_nm = 't5-base'
+        model, tokenizer = load_model_n_tokenizer(model_name_or_path=md_nm, peft_method='p_tuning')
+        model.eval()
+        model.peft_config['default'].inference_mode = True
+        mic(model.peft_config)
+
+        text = 'Is the following test happy or not. Say `yes` or `no`. I am happy.'
+        inputs = tokenizer(text, truncation=True, padding='max_length', return_tensors='pt')
+        mic(inputs)
+
+        with torch.no_grad():
+            outputs = model.generate(**inputs, max_new_tokens=32)  # Greedy decoding
+        lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        mic(lst_decoded)
+    try_generate()
