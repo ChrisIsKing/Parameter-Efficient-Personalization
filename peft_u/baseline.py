@@ -114,7 +114,7 @@ def load_model_n_tokenizer(
                 peft_config: PeftConfig = PromptTuningConfig(**config_d, prompt_tuning_init=PromptTuningInit.RANDOM)
         model = get_peft_model(model, peft_config)
 
-    model_meta = dict(param=model_util.get_trainable_param_meta(model), size=model_util.get_model_size(model))
+    model_meta = get_model_meta(model)
     if verbose:
         logger.info(f'Model info: {pl.i(model_meta)}')
     if logger_fl:
@@ -584,3 +584,13 @@ if __name__ == '__main__':
         lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
         mic(lst_decoded)
     try_generate()
+
+    def check_lenient_dec():
+        label_options = [
+            'answer', 'answer_overans-sway', 'cant-answer-lying', 'cant-answer-sincere',
+            'shift-correct', 'shift-dodge'
+        ]
+        lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed'], label_options=label_options)
+        dec = 'answer: cant-answer-sincere'
+        mic(lenient(dec))
+    # check_lenient_dec()
