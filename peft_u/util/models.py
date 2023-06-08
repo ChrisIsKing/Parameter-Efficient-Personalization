@@ -7,50 +7,7 @@ from stefutil import *
 from peft_u.util.util import *
 
 
-__all__ = [
-    'get_trainable_param_meta', 'get_model_size',
-    'hf_model_name_drop_org', 'hf_custom_model_cache_dir', 'get_hf_cache_dir'
-]
-
-
-def get_trainable_param_meta(model: torch.nn.Module, fmt='str'):
-    """
-    Edited from `PeftModel.get_trainable_parameters`
-    """
-    ca.check_mismatch('#Param Format', fmt, ['int', 'str'])
-
-    trainable_params = 0
-    all_param = 0
-    for _, param in model.named_parameters():
-        num_params = param.numel()
-        # if using DS Zero 3 and the weights are initialized empty
-        if num_params == 0 and hasattr(param, "ds_numel"):
-            num_params = param.ds_numel
-
-        all_param += num_params
-        if param.requires_grad:
-            trainable_params += num_params
-
-    ratio = round(trainable_params / all_param * 100, 2)
-    if fmt == 'str':
-        trainable_params = fmt_num(trainable_params)
-        all_param = fmt_num(all_param)
-    return {
-        '#trainable': trainable_params,
-        '#all': all_param,
-        'ratio': f'{ratio}%'
-    }
-
-
-def get_model_size(model: torch.nn.Module, fmt='str', all_only: bool = True):
-    ca.check_mismatch('Size Format', fmt, ['int', 'str'])
-
-    param_size = sum(p.nelement() * p.element_size() for p in model.parameters())
-    buffer_size = sum(b.nelement() * b.element_size() for b in model.buffers())
-    ret = dict(param_size=param_size, buffer_size=buffer_size, size_all=param_size + buffer_size)
-    if fmt == 'str':
-        ret = {k: fmt_sizeof(v) for k, v in ret.items()}
-    return ret['size_all'] if all_only else ret
+__all__ = ['hf_model_name_drop_org', 'hf_custom_model_cache_dir', 'get_hf_cache_dir']
 
 
 def hf_model_name_drop_org(model_name: str) -> str:
