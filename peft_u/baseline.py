@@ -152,7 +152,7 @@ def train_single(
         model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: InputEgDataset,
         device: str = 'cuda', seed: int = 42,
         batch_size: int = 8, num_epochs: int = 3, learning_rate: float = 2e-5, weight_decay: float = 0.01,
-        output_path: str = None, user_id: str = None, verbose: bool = False
+        output_path: str = None, user_id: str = None, verbose: bool = False, save_per_epoch: bool = True
 ):
     output_path = os_join(output_path, f'User-{user_id}')
 
@@ -262,7 +262,8 @@ def train_single(
                 ls(d_log, training=False, to_console=False)
         assert eval_epoch_loss is not None  # sanity check
 
-        _save(f'epoch_{epoch:02d}')
+        if save_per_epoch:
+            _save(f'epoch_{epoch:02d}')
         if eval_epoch_loss < best_val_loss:
             best_val_loss = eval_epoch_loss
             _save('trained')
@@ -429,7 +430,8 @@ if __name__ == '__main__':
             # strt = 28  # hatexplain
             # strt = 5021  # measuringhatespeech
             # strt = 56   # `cockamamie`
-            # strt = 287  # `wikidetox`
+            # strt = 921  # `wikidetox`
+            # strt = '45214884'  # `unhealthyconversations`
             strt = None
             dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage, uid_start_from=strt)
             md_load_args = dict(peft_method=method, device=device, logger_fl=logger_fl)
@@ -467,7 +469,7 @@ if __name__ == '__main__':
                     train_single(
                         model=model, tokenizer=tokenizer, dataset=dset[uid], device=device, seed=seed,
                         batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
-                        weight_decay=weight_decay, output_path=output_path, user_id=uid
+                        weight_decay=weight_decay, output_path=output_path, user_id=uid, save_per_epoch=False
                     )
                     t_e_ = tm_.end()
                     if not global_tqdm:
@@ -565,7 +567,7 @@ if __name__ == '__main__':
             t_e = tm.end()
             logger.info(f'Testing done in {pl.i(t_e)}')
             logger_fl.info(f'Testing done in {t_e}')
-    # command_prompt()
+    command_prompt()
 
     def try_generate():
         md_nm = HF_MODEL_NAME
@@ -583,7 +585,7 @@ if __name__ == '__main__':
             outputs = model.generate(**inputs, max_new_tokens=32)  # Greedy decoding
         lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
         mic(lst_decoded)
-    try_generate()
+    # try_generate()
 
     def check_lenient_dec():
         label_options = [
