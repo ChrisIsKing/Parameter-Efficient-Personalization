@@ -4,6 +4,7 @@ Try adapters from `adapter-transformers`
 Note that since `adapter-transformers` is a direct fork on HF `transformers`
 and we use a different `transformers` version, make sure to set up a separate environment for `peft_u` and `adapter`
 """
+
 import math
 import os
 import json
@@ -20,7 +21,9 @@ from tqdm import tqdm
 from stefutil import *
 
 
-BASE_PATH = os.path.dirname(__file__)
+_DIRS = __file__.split(os.sep)
+BASE_PATH, PROJ_DIR, PKG_DIR = os.sep.join(_DIRS[:-3]), _DIRS[-3], _DIRS[-2]
+DSET_DIR = 'data'
 
 
 if __name__ == '__main__':
@@ -29,8 +32,8 @@ if __name__ == '__main__':
             "and 'Non-hateful' if the text does not contain hate speech."
 
     def load_dset(tokenizer: T5TokenizerFast, tokenize: bool = True):
-        dnm = 'tweeteval-user_data_leaked'
-        with open(os_join(BASE_PATH, f'{dnm}.json'), 'r') as f:
+        dnm, fnm = 'tweeteval', 'user_data_leaked'
+        with open(os_join(BASE_PATH, PROJ_DIR, DSET_DIR, dnm, f'{fnm}.json'), 'r') as f:
             data = json.load(f)
         data = data['0']  # Take 1st user arbitrarily
 
@@ -62,10 +65,11 @@ if __name__ == '__main__':
                 labels = tokenizer(labels, **tok_args)['input_ids']
                 labels[labels == tokenizer.pad_token_id] = -100  # `-100` is ignored in loss
                 ret['labels'] = labels
+                # return {k: v.tolist() for k, v in ret.items()}
                 return ret
             return dset.map(
                 map_single, batched=True,
-                # remove_columns=['text', 'label']
+                remove_columns=['text', 'label']
             )
         else:
             return dset
@@ -76,25 +80,47 @@ if __name__ == '__main__':
     MD_NM = 'google/flan-t5-small'
 
     def train():
-        # TODO: the conditional gen LM head is not supported by the package, have to load the LM head weights manually
-        model = T5AdapterModel.from_pretrained(MD_NM)
-        # model = AutoModelForSeq2SeqLM.from_pretrained(md_nm)
-        tokenizer = AutoTokenizer.from_pretrained(MD_NM)
-        tokenizer.model_max_length = 512
+        model = T5AdapterModel.from_pretrained(MD_NM)  # Should observe a warning on `lm_head.weight` not used
 
         model.add_adapter(adapter_name=ADAPTER_NM, config=HoulsbyConfig())
         model.add_seq2seq_lm_head(head_name=ADAPTER_NM)
         model.train_adapter(ADAPTER_NM)  # activate for training
+
+        # Since there's not a LM head version of `T5AdapterModel`,
+        # use the LM head from the HF model and set it to frozen, i.e. override `train_adapter` on the LM head
+        model_dummy = AutoModelForSeq2SeqLM.from_pretrained(MD_NM)
+        # mic(model_dummy)
+        state_d = model_dummy.lm_head.state_dict()
+        assert set(state_d.keys()) == {'weight'}  # sanity check
+        pretrained_lm_weight = state_d['weight']
+        lm_head = model.heads[model.active_head]
+        assert len(lm_head._modules) == 1  # sanity check, should only contain `output_embeddings`
+        assert pretrained_lm_weight.shape == lm_head.get_output_embeddings().weight.shape
+        mic(lm_head.get_output_embeddings().weight)
+        mic(lm_head.get_output_embeddings().weight.dtype)
+        mic(type(lm_head.get_output_embeddings().weight))
+        # raise NotImplementedError
+        # lm_head.set_output_embeddings(torch.nn.Embedding.from_pretrained(pretrained_lm_weight, freeze=True))
+        # self._modules[next(reversed(self._modules))][:] =
+        lm_head_weight = lm_head.get_output_embeddings().weight
+        lm_head_weight.requires_grad = False
+        lm_head_weight[:] = pretrained_lm_weight
+        del model_dummy, state_d
+
         mic(get_model_meta(model))
+        tokenizer = AutoTokenizer.from_pretrained(MD_NM)
+        tokenizer.model_max_length = 512
 
         dset = load_dset(tokenizer=tokenizer)
+        mic(dset)
+        # raise NotImplementedError
 
         date = now(fmt='short-date')
         _md_nm = MD_NM
         if '/' in _md_nm:
             org, _md_nm = _md_nm.split('/')
         meta = dict(md_nm=_md_nm, adapter='Houlsby')
-        output_path = os_join(BASE_PATH, 'models', f'{date}_{pl.pa(meta)}_{ADAPTER_NM}')
+        output_path = os_join(BASE_PATH, PROJ_DIR, 'models', f'{date}_{pl.pa(meta)}_{ADAPTER_NM}')
         os.makedirs(output_path, exist_ok=True)
         train_args = TrainingArguments(
             output_dir=output_path,
