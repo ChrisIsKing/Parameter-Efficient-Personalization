@@ -428,11 +428,14 @@ if __name__ == '__main__':
 
             # strt = 23  # goemotion
             # strt = 28  # hatexplain
-            # strt = 5021  # measuringhatespeech
-            # strt = 1011   # `cockamamie`
-            # strt = 921  # `wikidetox`
+            # strt = 5021  # `measuringhatespeech.lora`
+            # strt = 3896  # `measuringhatespeech.prefix`
+            # strt = 3342  # `measuringhatespeech.p_tuning`
+            strt = 1161  # `measuringhatespeech.prompt_tuning`
+            # strt = 1714   # `cockamamie`
+            # strt = 1682  # `wikidetox`
             # strt = '45214884'  # `unhealthyconversations`
-            strt = None
+            # strt = None
             dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage, uid_start_from=strt)
             md_load_args = dict(peft_method=method, device=device, logger_fl=logger_fl)
 
@@ -556,6 +559,7 @@ if __name__ == '__main__':
                     df.to_csv(path)
 
                     accs[uid] = acc
+                    # del model
                 acc_avg = np.mean(list(accs.values()))
                 acc_avg_str = f'{acc_avg*100:.1f}'
                 logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg_str)}')
