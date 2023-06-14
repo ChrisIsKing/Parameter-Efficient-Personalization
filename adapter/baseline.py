@@ -160,7 +160,7 @@ if __name__ == '__main__':
         tokenizer = AutoTokenizer.from_pretrained(MD_NM)
         tokenizer.model_max_length = 512
 
-        adapter_path = os_join(BASE_PATH, 'models', '23-06-14_{md_nm=flan-t5-base, adapter=Houlsby}_debug')
+        adapter_path = os_join(BASE_PATH, PROJ_DIR, 'models', '23-06-14_{md_nm=flan-t5-base, adapter=Houlsby}_debug')
         model.load_adapter(adapter_name_or_path=adapter_path)
         model.load_head(save_directory=adapter_path)
         model.set_active_adapters(output_dir)
