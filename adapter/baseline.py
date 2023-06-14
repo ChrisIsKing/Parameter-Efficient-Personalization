@@ -153,14 +153,14 @@ if __name__ == '__main__':
 
         trainer.train()
         model.save_adapter(save_directory=output_path, adapter_name=output_dir)
-    train()
+    # train()
 
     def test():
         model = T5AdapterModel.from_pretrained(MD_NM)
         tokenizer = AutoTokenizer.from_pretrained(MD_NM)
         tokenizer.model_max_length = 512
 
-        adapter_path = os_join(BASE_PATH, 'models', '23-06-08_{md_nm=flan-t5-small, adapter=Houlsby}_debug')
+        adapter_path = os_join(BASE_PATH, 'models', '23-06-14_{md_nm=flan-t5-base, adapter=Houlsby}_debug')
         model.load_adapter(adapter_name_or_path=adapter_path)
         model.load_head(save_directory=adapter_path)
         model.set_active_adapters(output_dir)
@@ -177,4 +177,4 @@ if __name__ == '__main__':
             lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
             mic(lst_decoded)
             raise NotImplementedError
-    # test()
+    test()
