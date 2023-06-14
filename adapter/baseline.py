@@ -3,6 +3,8 @@ Try adapters from `adapter-transformers`
 
 Note that since `adapter-transformers` is a direct fork on HF `transformers`
 and we use a different `transformers` version, make sure to set up a separate environment for `peft_u` and `adapter`
+
+Note: remember to remove `transformers` and keep only `adapter-transformers`
 """
 
 import math
@@ -11,7 +13,9 @@ import json
 from os.path import join as os_join
 
 import torch
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, HoulsbyConfig, T5TokenizerFast
+import transformers
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, T5TokenizerFast
+from transformers import HoulsbyConfig, IA3Config
 from transformers.adapters import T5AdapterModel
 from transformers import AdapterTrainer, TrainingArguments
 from torch.utils.data import DataLoader
@@ -27,6 +31,10 @@ DSET_DIR = 'data'
 
 
 if __name__ == '__main__':
+    transformers.logging.set_verbosity_warning()
+    logger = transformers.logging.get_logger('transformers.trainer')  # Disables training & eval info log
+    logger.setLevel(transformers.logging.WARN)
+
     INSTR = "Please review the following text and indicate if it has the presence of hate speech. "\
             "Respond 'Hateful' if the text contains hate speech "\
             "and 'Non-hateful' if the text does not contain hate speech."
@@ -74,18 +82,24 @@ if __name__ == '__main__':
         else:
             return dset
 
-    ADAPTER_NM = 'debug'
+    output_dir = 'debug'
+    # adapter_nm = 'Houlsby'
+    adapter_nm = 'IA3'
     DEBUG = True
     # MD_NM = 'google/flan-t5-base'
     MD_NM = 'google/flan-t5-small'
 
+    # mic(transformers.utils.logging.get_verbosity())
+    # transformers.utils.logging.set_verbosity_warning()
+
     def train():
         model = T5AdapterModel.from_pretrained(MD_NM)  # Should observe a warning on `lm_head.weight` not used
 
-        model.add_adapter(adapter_name=ADAPTER_NM, config=HoulsbyConfig())
+        adapter_config = HoulsbyConfig() if adapter_nm == 'Houlsby' else IA3Config()
+        model.add_adapter(adapter_name=output_dir, config=adapter_config)
         # Use a different name so that the LM head is not saved to disk
-        model.add_seq2seq_lm_head(head_name=f'{ADAPTER_NM}-freeze')
-        model.train_adapter(ADAPTER_NM)  # activate for training
+        model.add_seq2seq_lm_head(head_name=f'{output_dir}-freeze')
+        model.train_adapter(output_dir)  # activate for training
 
         # Since there's not a LM head version of `T5AdapterModel`,
         # use the LM head from the HF model and set it to frozen, i.e. override `train_adapter` on the LM head
@@ -111,8 +125,8 @@ if __name__ == '__main__':
         _md_nm = MD_NM
         if '/' in _md_nm:
             org, _md_nm = _md_nm.split('/')
-        meta = dict(md_nm=_md_nm, adapter='Houlsby')
-        output_path = os_join(BASE_PATH, PROJ_DIR, 'models', f'{date}_{pl.pa(meta)}_{ADAPTER_NM}')
+        meta = dict(md_nm=_md_nm, adapter=adapter_nm)
+        output_path = os_join(BASE_PATH, PROJ_DIR, 'models', f'{date}_{pl.pa(meta)}_{output_dir}')
         os.makedirs(output_path, exist_ok=True)
         train_args = TrainingArguments(
             output_dir=output_path,
@@ -141,7 +155,7 @@ if __name__ == '__main__':
         trainer.add_callback(MyProgressCallback())
 
         trainer.train()
-        model.save_adapter(save_directory=output_path, adapter_name=ADAPTER_NM)
+        model.save_adapter(save_directory=output_path, adapter_name=output_dir)
     train()
 
     def test():
@@ -152,7 +166,7 @@ if __name__ == '__main__':
         adapter_path = os_join(BASE_PATH, 'models', '23-06-08_{md_nm=flan-t5-small, adapter=Houlsby}_debug')
         model.load_adapter(adapter_name_or_path=adapter_path)
         model.load_head(save_directory=adapter_path)
-        model.set_active_adapters(ADAPTER_NM)
+        model.set_active_adapters(output_dir)
 
         dset = load_dset(tokenizer=tokenizer)['test']
         idxs_gen = group_n(range(len(dset)), n=8)
