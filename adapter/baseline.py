@@ -83,14 +83,11 @@ if __name__ == '__main__':
             return dset
 
     output_dir = 'debug'
-    # adapter_nm = 'Houlsby'
-    adapter_nm = 'IA3'
-    DEBUG = True
-    # MD_NM = 'google/flan-t5-base'
-    MD_NM = 'google/flan-t5-small'
-
-    # mic(transformers.utils.logging.get_verbosity())
-    # transformers.utils.logging.set_verbosity_warning()
+    adapter_nm = 'Houlsby'
+    # adapter_nm = 'IA3'
+    # DEBUG = True
+    DEBUG = False
+    MD_NM = 'google/flan-t5-small' if DEBUG else 'google/flan-t5-base'
 
     def train():
         model = T5AdapterModel.from_pretrained(MD_NM)  # Should observe a warning on `lm_head.weight` not used
