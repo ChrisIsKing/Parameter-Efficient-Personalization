@@ -11,6 +11,7 @@ import math
 import os
 import json
 from os.path import join as os_join
+from typing import Tuple
 
 import torch
 import transformers
@@ -18,7 +19,6 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, T5TokenizerFast
 from transformers import HoulsbyConfig, IA3Config
 from transformers.adapters import T5AdapterModel
 from transformers import AdapterTrainer, TrainingArguments
-from torch.utils.data import DataLoader
 from datasets import Dataset, DatasetDict
 from tqdm import tqdm
 
@@ -30,6 +30,36 @@ BASE_PATH, PROJ_DIR, PKG_DIR = os.sep.join(_DIRS[:-3]), _DIRS[-3], _DIRS[-2]
 DSET_DIR = 'data'
 
 
+HF_MODEL_NAME = 'google/flan-t5-base'
+
+
+def load_t5_model_with_lm_head_n_tokenizer(
+        model_name_or_path: str = None, dummy_hf_model_name: str = HF_MODEL_NAME
+) -> Tuple[T5AdapterModel, T5TokenizerFast]:
+    model = T5AdapterModel.from_pretrained(model_name_or_path)  # Should observe a warning on `lm_head.weight` not used
+
+    # Use a different name so that the LM head is not saved to disk
+    model.add_seq2seq_lm_head(head_name=f'{output_dir}-freeze')
+
+    # Since there's not a LM head version of `T5AdapterModel`,
+    # use the LM head from the HF model and set it to frozen, i.e. override `train_adapter` on the LM head
+    model_dummy = AutoModelForSeq2SeqLM.from_pretrained(dummy_hf_model_name)
+    state_d = model_dummy.lm_head.state_dict()
+    assert set(state_d.keys()) == {'weight'}  # sanity check
+    pretrained_lm_weight = state_d['weight']
+    lm_head = model.heads[model.active_head]
+    assert len(lm_head._modules) == 1  # sanity check, should only contain `output_embeddings`
+    assert pretrained_lm_weight.shape == lm_head.get_output_embeddings().weight.shape
+    lm_head_weight = lm_head.get_output_embeddings().weight
+    lm_head_weight.requires_grad = False
+    lm_head_weight[:] = pretrained_lm_weight
+    del model_dummy, state_d
+
+    tokenizer = AutoTokenizer.from_pretrained(md_nm)
+    tokenizer.model_max_length = 512
+    return model, tokenizer
+
+
 if __name__ == '__main__':
     transformers.logging.set_verbosity_warning()
     logger = transformers.logging.get_logger('transformers.trainer')  # Disables training & eval info log
@@ -39,7 +69,7 @@ if __name__ == '__main__':
             "Respond 'Hateful' if the text contains hate speech "\
             "and 'Non-hateful' if the text does not contain hate speech."
 
-    def load_dset(tokenizer: T5TokenizerFast, tokenize: bool = True):
+    def load_dset(tokenizer: T5TokenizerFast, tokenize: bool = True, **kwargs):
         dnm, fnm = 'tweeteval', 'user_data_leaked'
         with open(os_join(BASE_PATH, PROJ_DIR, DSET_DIR, dnm, f'{fnm}.json'), 'r') as f:
             data = json.load(f)
@@ -75,51 +105,29 @@ if __name__ == '__main__':
                 ret['labels'] = labels
                 # return {k: v.tolist() for k, v in ret.items()}
                 return ret
-            return dset.map(
-                map_single, batched=True,
-                remove_columns=['text', 'label']
-            )
+            return dset.map(map_single, batched=True)
         else:
             return dset
 
     output_dir = 'debug'
     adapter_nm = 'Houlsby'
     # adapter_nm = 'IA3'
-    # DEBUG = True
-    DEBUG = False
-    MD_NM = 'google/flan-t5-small' if DEBUG else 'google/flan-t5-base'
+    DEBUG = True
+    # DEBUG = False
+    md_nm = 'google/flan-t5-small' if DEBUG else HF_MODEL_NAME
+    # mic(md_nm)
 
     def train():
-        model = T5AdapterModel.from_pretrained(MD_NM)  # Should observe a warning on `lm_head.weight` not used
-
+        model, tokenizer = load_t5_model_with_lm_head_n_tokenizer(model_name_or_path=md_nm, dummy_hf_model_name=md_nm)
         adapter_config = HoulsbyConfig() if adapter_nm == 'Houlsby' else IA3Config()
         model.add_adapter(adapter_name=output_dir, config=adapter_config)
-        # Use a different name so that the LM head is not saved to disk
-        model.add_seq2seq_lm_head(head_name=f'{output_dir}-freeze')
-        model.train_adapter(output_dir)  # activate for training
-
-        # Since there's not a LM head version of `T5AdapterModel`,
-        # use the LM head from the HF model and set it to frozen, i.e. override `train_adapter` on the LM head
-        model_dummy = AutoModelForSeq2SeqLM.from_pretrained(MD_NM)
-        state_d = model_dummy.lm_head.state_dict()
-        assert set(state_d.keys()) == {'weight'}  # sanity check
-        pretrained_lm_weight = state_d['weight']
-        lm_head = model.heads[model.active_head]
-        assert len(lm_head._modules) == 1  # sanity check, should only contain `output_embeddings`
-        assert pretrained_lm_weight.shape == lm_head.get_output_embeddings().weight.shape
-        lm_head_weight = lm_head.get_output_embeddings().weight
-        lm_head_weight.requires_grad = False
-        lm_head_weight[:] = pretrained_lm_weight
-        del model_dummy, state_d
-
+        model.train_adapter([output_dir])  # activate for training
         mic(get_model_meta(model))
-        tokenizer = AutoTokenizer.from_pretrained(MD_NM)
-        tokenizer.model_max_length = 512
 
-        dset = load_dset(tokenizer=tokenizer)
+        dset = load_dset(tokenizer=tokenizer, remove_columns=['text', 'label'])
 
         date = now(fmt='short-date')
-        _md_nm = MD_NM
+        _md_nm = md_nm
         if '/' in _md_nm:
             org, _md_nm = _md_nm.split('/')
         meta = dict(md_nm=_md_nm, adapter=adapter_nm)
@@ -141,10 +149,7 @@ if __name__ == '__main__':
             tr = tr.select(range(16))
             vl = vl.select(range(16))
 
-        trainer = AdapterTrainer(
-            model=model, args=train_args, tokenizer=tokenizer, train_dataset=tr, eval_dataset=vl,
-            # callbacks=[MyProgressCallback()]
-        )
+        trainer = AdapterTrainer(model=model, args=train_args, tokenizer=tokenizer, train_dataset=tr, eval_dataset=vl)
         callbacks = trainer.callback_handler.callbacks
         trainer.callback_handler.callbacks = [  # Remove internal callback
             c for c in callbacks if str(c.__class__) != "<class 'transformers.trainer_callback.PrinterCallback'>"
@@ -153,28 +158,38 @@ if __name__ == '__main__':
 
         trainer.train()
         model.save_adapter(save_directory=output_path, adapter_name=output_dir)
+        mic(output_path, output_dir)
     # train()
 
     def test():
-        model = T5AdapterModel.from_pretrained(MD_NM)
-        tokenizer = AutoTokenizer.from_pretrained(MD_NM)
-        tokenizer.model_max_length = 512
+        model, tokenizer = load_t5_model_with_lm_head_n_tokenizer(model_name_or_path=md_nm, dummy_hf_model_name=md_nm)
 
-        adapter_path = os_join(BASE_PATH, PROJ_DIR, 'models', '23-06-14_{md_nm=flan-t5-base, adapter=Houlsby}_debug')
+        adapter_path = os_join(BASE_PATH, PROJ_DIR, 'models', '23-06-14_{md_nm=flan-t5-small, adapter=Houlsby}_debug')
         model.load_adapter(adapter_name_or_path=adapter_path)
-        model.load_head(save_directory=adapter_path)
-        model.set_active_adapters(output_dir)
+        model.set_active_adapters([output_dir])
+        model.eval()
 
         dset = load_dset(tokenizer=tokenizer)['test']
         idxs_gen = group_n(range(len(dset)), n=8)
         total = math.ceil(len(dset) / 8)
+
+        n_total, n_correct = 0, 0
         for i_ba, idxs in enumerate(tqdm(idxs_gen, desc='Testing', total=total)):
             idxs = [int(idx) for idx in idxs]
             inputs = {k: torch.tensor(v) for k, v in dset[idxs].items() if k not in ['text', 'label', 'labels']}
+            labels = dset[idxs]['label']
+            # mic(labels)
+
             # mic(inputs)
             with torch.no_grad():
                 outputs = model.generate(**inputs, max_new_tokens=16)
             lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-            mic(lst_decoded)
-            raise NotImplementedError
+            # mic(lst_decoded)
+            # raise NotImplementedError
+
+            for lb, dec in zip(labels, lst_decoded):
+                n_total += 1
+                if lb == dec:
+                    n_correct += 1
+        mic(n_correct / n_total)
     test()
