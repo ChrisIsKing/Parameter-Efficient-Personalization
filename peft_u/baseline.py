@@ -42,7 +42,7 @@ logger = get_logger('PEFT Baseline')
 
 
 HF_MODEL_NAME = 'google/flan-t5-base'
-peft_methods = ["lora", "prefix", "p_tuning", "prompt_tuning"]
+PEFT_METHODS = ["lora", "prefix", "p_tuning", "prompt_tuning"]
 DEFAULT_PEFT_METHOD = 'lora'
 
 
@@ -57,7 +57,7 @@ def parse_args():
     train_parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
     train_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
     train_parser.add_argument("--leakage", type=bool, required=False, default=True)
-    train_parser.add_argument("--method", type=str, required=False, default=DEFAULT_PEFT_METHOD, choices=peft_methods)
+    train_parser.add_argument("--method", type=str, required=False, default=DEFAULT_PEFT_METHOD, choices=PEFT_METHODS)
     train_parser.add_argument("--batch_size", type=int, required=False, default=8)
     train_parser.add_argument("--num_epochs", type=int, required=False, default=8)
     train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
@@ -69,8 +69,6 @@ def parse_args():
 
     test_parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
     test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
-    # method for zeroshot
-    # test_parser.add_argument("--method", type=str, required=False, default=None, choices=methods)
     test_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
     test_parser.add_argument("--leakage", type=str, required=False, default=True)
     test_parser.add_argument("--batch_size", type=int, required=False, default=8)
@@ -94,7 +92,7 @@ def load_model_n_tokenizer(
     tokenizer.model_max_length = 512
 
     if peft_method is not None:
-        ca.check_mismatch('PEFT method', peft_method, peft_methods)
+        ca.check_mismatch('PEFT method', peft_method, PEFT_METHODS)
         if verbose:
             logger.info('Loading Peft model...')
         if logger_fl:
@@ -416,9 +414,10 @@ if __name__ == '__main__':
             os.makedirs(output_path, exist_ok=True)
 
             d_log = dict(
+                model_name_or_path=model_name_or_path, method=method,
+                dataset_name=dataset_name, leakage=leakage, personalize=personalize,
                 batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate, weight_decay=weight_decay,
-                model_name_or_path=model_name_or_path, dataset_name=dataset_name, leakage=leakage, method=method,
-                seed=seed, device=device, personalize=personalize,
+                seed=seed, device=device,
                 output_dir=output_dir, output_path=output_path
             )
             fnm = os_join(output_path, f'train_{now(for_path=True)}.log')
@@ -461,7 +460,6 @@ if __name__ == '__main__':
                     tm_ = Timer()
 
                     # # if any dataset split is empty, skip
-                    # # TODO: those users should be deterministic by each dataset processing
                     # split_sizes = _get_dataset_sizes(dset[uid])
                     # if any(v == 0 for v in split_sizes.values()):
                     #     logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
@@ -489,9 +487,6 @@ if __name__ == '__main__':
             dataset_name, leakage, personalize = args.dataset_name, args.leakage, args.personalize
             bsz = args.batch_size
             zeroshot = args.zeroshot
-            # zeroshot, method = args.zeroshot, args.method
-            # if zeroshot:
-            #     assert method is not None
 
             date = now(fmt='short-date')
             if zeroshot:
@@ -504,8 +499,7 @@ if __name__ == '__main__':
 
             d_log = dict(
                 model_name_or_path=model_name_or_path, dataset_name=dataset_name, leakage=leakage,
-                personalize=personalize, batch_size=bsz, zeroshot=zeroshot,
-                # method=method
+                personalize=personalize, batch_size=bsz, zeroshot=zeroshot
             )
             logger.info(f'Testing PEFT w/ {pl.i(d_log)}...')
             fnm = os_join(eval_output_path, f'test_{now(for_path=True)}.log')
@@ -516,7 +510,6 @@ if __name__ == '__main__':
             if personalize:
                 model, tokenizer = None, None
                 if zeroshot:  # Load global model for all users
-                    # load_args = dict(peft_method=method, verbose=True, logger_fl=logger_fl)
                     load_args = dict(verbose=True, logger_fl=logger_fl)
                     model, tokenizer = load_model_n_tokenizer(model_name_or_path=model_name_or_path, **load_args)
                     model.eval()
@@ -536,7 +529,6 @@ if __name__ == '__main__':
                 accs = dict()
                 for i, uid in enumerate(it, start=1):
                     ts = ListDataset(dset[uid].test)
-                    # logger.info(f'Testing personalized PEFT for User {pl.i(uid)} w/ test split size {pl.i(len(ts))}...')
                     user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
                     desc = f'{pl.i(now(for_path=True, color=True))} Testing on User {pl.i(uid)}({user_ordinal})'
 
@@ -546,8 +538,7 @@ if __name__ == '__main__':
                         assert os.path.exists(path)  # sanity check
 
                         model, tokenizer = load_trained(model_name_or_path=path)
-                    # if not os.path.exists(path) or len(ts) == 0:
-                    #     # TODO: see issue in training, empty split sizes
+                    # if len(ts) == 0:
                     #     logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
                     #     continue
 
