@@ -11,7 +11,7 @@ import math
 import os
 import json
 from os.path import join as os_join
-from typing import Tuple
+from typing import Tuple, Dict
 from argparse import ArgumentParser
 
 import torch
@@ -19,8 +19,10 @@ import transformers
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, T5TokenizerFast
 from transformers import HoulsbyConfig, IA3Config
 from transformers.adapters import T5AdapterModel
-from transformers import AdapterTrainer, TrainingArguments
+from transformers import Trainer, AdapterTrainer, TrainingArguments, TrainerCallback, SchedulerType
+from transformers.training_args import OptimizerNames
 from datasets import Dataset, DatasetDict
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from stefutil import *
@@ -99,15 +101,63 @@ def load_t5_model_with_lm_head_n_tokenizer(
 
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     tokenizer.model_max_length = 512
+    tokenizer.deprecation_warnings['Asking-to-pad-a-fast-tokenizer'] = True  # disables warning
     return model, tokenizer
+
+
+class TqdmPostfixCallback(TrainerCallback):
+    def __init__(self, trainer: Trainer):
+        args = trainer.args
+        n_ep = args.num_train_epochs
+        bsz = args.per_device_train_batch_size * args.gradient_accumulation_steps
+        n_data = len(trainer.train_dataset)
+        n_step = max(math.ceil(n_data / bsz), 1) * n_ep
+        mp = MlPrettier(ref=dict(step=n_step, epoch=n_ep))
+
+        output_dir = trainer.args.output_dir
+        # writer = SummaryWriter(os_join(output_dir, f'tb'))
+        self.ls = LogStep(
+            trainer=trainer, prettier=mp,
+            # logger=self.logger, file_logger=self.logger_fl, tb_writer=self.writer
+        )
+
+    def on_log(self, args: TrainingArguments, state, control, logs: Dict = None, **kwargs):
+        step = state.global_step
+        if 'loss' in logs:  # training step
+            d_log = dict(epoch=state.epoch, step=step+1)  # 1-indexed
+            d_log.update(dict(lr=logs['learning_rate'], loss=logs['loss']))
+            self.ls(d_log, training=True, to_console=False)
+        elif 'eval_loss' in logs:  # eval for each epoch
+            n_ep = logs['epoch']
+            assert n_ep.is_integer()
+            d_log = dict(epoch=int(n_ep), loss=logs['eval_loss'])
+            self.ls(d_log, training=False, to_console=False)
+        else:
+            logger.info(pl.i(logs))
+
+
+class MyAdapterTrainer(AdapterTrainer):
+    # def __init__(self, **kwargs):
+    #     super().__init__(**kwargs)
+    #     self.with_tqdm = True
+
+    def create_optimizer(self):
+        """
+        Use the implementation from original HuggingFace Trainer class
+        cos the `AdapterTrainer` implementation forces using HF's AdamW
+        """
+        super(AdapterTrainer, self).create_optimizer()
 
 
 if __name__ == '__main__':
     check_on_adapter()
 
     transformers.logging.set_verbosity_warning()
-    logger_ = transformers.logging.get_logger('transformers.trainer')  # Disables training & eval info log
-    logger_.setLevel(transformers.logging.WARN)
+    # Disables logs for 1) training & eval info, 2) saving adapter config, 3) saving adapter params
+    logger_nms = ['transformers.trainer', 'transformers.configuration_utils', 'transformers.adapters.loading']
+    for logger_nm in logger_nms:
+        logger_ = transformers.logging.get_logger(logger_nm)
+        logger_.setLevel(transformers.logging.WARN)
 
     INSTR = "Please review the following text and indicate if it has the presence of hate speech. "\
             "Respond 'Hateful' if the text contains hate speech "\
@@ -203,25 +253,35 @@ if __name__ == '__main__':
 
             dset = load_dset(tokenizer=tokenizer, remove_columns=['text', 'label'])
 
-            train_args = TrainingArguments(
+            train_args = dict(
                 output_dir=output_path,
                 do_train=True,
                 do_eval=True,
+                optim=OptimizerNames.ADAMW_TORCH,
                 learning_rate=learning_rate,
+                lr_scheduler_type=SchedulerType.LINEAR,  # same w/ adapter baseline
+                warmup_ratio=1e-2,
                 per_device_train_batch_size=batch_size,
                 per_device_eval_batch_size=batch_size,
                 num_train_epochs=num_epochs,
                 weight_decay=weight_decay,
                 remove_unused_columns=False,
-                disable_tqdm=True,  # For my custom pbar
+                disable_tqdm=True,
+                log_level='warning',
+                logging_strategy='steps',
+                logging_steps=1,
                 evaluation_strategy='epoch'
             )
+            logger.info(f'Training args: {pl.fmt(train_args)}')
+            train_args = TrainingArguments(**train_args)
+            logger_fl.info(f'Training args: {pl.fmt(train_args.to_dict())}')
+
             tr, vl = dset['train'], dset['validation']
             if DEBUG:
                 tr = tr.select(range(16))
                 vl = vl.select(range(16))
 
-            trainer = AdapterTrainer(
+            trainer = MyAdapterTrainer(
                 model=model, args=train_args, tokenizer=tokenizer, train_dataset=tr, eval_dataset=vl
             )
             callbacks = trainer.callback_handler.callbacks
@@ -229,8 +289,13 @@ if __name__ == '__main__':
                 c for c in callbacks if str(c.__class__) != "<class 'transformers.trainer_callback.PrinterCallback'>"
             ]
             trainer.add_callback(MyProgressCallback())
+            trainer.add_callback(TqdmPostfixCallback(trainer=trainer))
 
+            tm = Timer()
             trainer.train()
+            t_e = tm.end()
+            logger.info(f'Training done in {pl.i(t_e)}')
+            logger_fl.info(f'Training done in {t_e}')
             model.save_adapter(save_directory=output_path, adapter_name=DEBUG_ADAPTER_NM)
         else:
             assert cmd == 'test'
