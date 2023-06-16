@@ -12,8 +12,10 @@ import os
 import json
 from os.path import join as os_join
 from typing import Tuple, Dict
+from logging import Logger
 from argparse import ArgumentParser
 
+import numpy as np
 import torch
 import transformers
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, T5TokenizerFast
@@ -106,7 +108,7 @@ def load_t5_model_with_lm_head_n_tokenizer(
 
 
 class TqdmPostfixCallback(TrainerCallback):
-    def __init__(self, trainer: Trainer):
+    def __init__(self, trainer: Trainer = None, logger_fl: Logger = None):
         args = trainer.args
         n_ep = args.num_train_epochs
         bsz = args.per_device_train_batch_size * args.gradient_accumulation_steps
@@ -114,12 +116,8 @@ class TqdmPostfixCallback(TrainerCallback):
         n_step = max(math.ceil(n_data / bsz), 1) * n_ep
         mp = MlPrettier(ref=dict(step=n_step, epoch=n_ep))
 
-        output_dir = trainer.args.output_dir
-        # writer = SummaryWriter(os_join(output_dir, f'tb'))
-        self.ls = LogStep(
-            trainer=trainer, prettier=mp,
-            # logger=self.logger, file_logger=self.logger_fl, tb_writer=self.writer
-        )
+        writer = SummaryWriter(os_join(trainer.args.output_dir, 'tensorboard'))
+        self.ls = LogStep(trainer=trainer, prettier=mp, logger=logger, file_logger=logger_fl, tb_writer=writer)
 
     def on_log(self, args: TrainingArguments, state, control, logs: Dict = None, **kwargs):
         step = state.global_step
@@ -137,10 +135,6 @@ class TqdmPostfixCallback(TrainerCallback):
 
 
 class MyAdapterTrainer(AdapterTrainer):
-    # def __init__(self, **kwargs):
-    #     super().__init__(**kwargs)
-    #     self.with_tqdm = True
-
     def create_optimizer(self):
         """
         Use the implementation from original HuggingFace Trainer class
@@ -202,9 +196,6 @@ if __name__ == '__main__':
         else:
             return dset
 
-    # DEBUG = True
-    DEBUG = False
-    # md_nm = 'google/flan-t5-small' if DEBUG else HF_MODEL_NAME
     DEBUG_ADAPTER_NM = 'debug'
 
     def command_prompt():
@@ -270,16 +261,18 @@ if __name__ == '__main__':
                 log_level='warning',
                 logging_strategy='steps',
                 logging_steps=1,
-                evaluation_strategy='epoch'
+                evaluation_strategy='epoch',
+                save_strategy='epoch',
+                report_to='none',
+                load_best_model_at_end=True,
+                metric_for_best_model='eval_loss',
+                greater_is_better=False
             )
             logger.info(f'Training args: {pl.fmt(train_args)}')
             train_args = TrainingArguments(**train_args)
             logger_fl.info(f'Training args: {pl.fmt(train_args.to_dict())}')
 
             tr, vl = dset['train'], dset['validation']
-            if DEBUG:
-                tr = tr.select(range(16))
-                vl = vl.select(range(16))
 
             trainer = MyAdapterTrainer(
                 model=model, args=train_args, tokenizer=tokenizer, train_dataset=tr, eval_dataset=vl
@@ -289,33 +282,58 @@ if __name__ == '__main__':
                 c for c in callbacks if str(c.__class__) != "<class 'transformers.trainer_callback.PrinterCallback'>"
             ]
             trainer.add_callback(MyProgressCallback())
-            trainer.add_callback(TqdmPostfixCallback(trainer=trainer))
+            trainer.add_callback(TqdmPostfixCallback(trainer=trainer, logger_fl=logger_fl))
 
             tm = Timer()
             trainer.train()
             t_e = tm.end()
             logger.info(f'Training done in {pl.i(t_e)}')
             logger_fl.info(f'Training done in {t_e}')
-            model.save_adapter(save_directory=output_path, adapter_name=DEBUG_ADAPTER_NM)
+            model.save_adapter(save_directory=os_join(output_path, 'trained'), adapter_name=DEBUG_ADAPTER_NM)
         else:
             assert cmd == 'test'
             model_name_or_path = args.model
             # dataset_name, leakage = args.dataset_name, args.leakage
             bsz = args.batch_size
 
+            date = now(fmt='short-date')
+            eval_output_path = os_join(BASE_PATH, PROJ_DIR, 'eval', f'{model_name_or_path}_Eval-{date}')
+            os.makedirs(eval_output_path, exist_ok=True)
+
+            d_log = dict(
+                model_name_or_path=model_name_or_path,
+                # dataset_name=dataset_name, leakage=leakage,
+                batch_size=bsz
+            )
+            logger.info(f'Testing Adapter w/ {pl.i(d_log)}...')
+            fnm = os_join(eval_output_path, f'test_{now(for_path=True)}.log')
+            logger_fl = get_logger('Adapter Test fl', kind='file-write', file_path=fnm)
+            logger_fl.info(f'Testing Adapter w/ {d_log}...')
+
             model, tokenizer = load_t5_model_with_lm_head_n_tokenizer()
 
-            adapter_path = os_join(BASE_PATH, PROJ_DIR, 'models', model_name_or_path)
+            adapter_path = os_join(BASE_PATH, PROJ_DIR, 'models', model_name_or_path, 'trained')
             model.load_adapter(adapter_name_or_path=adapter_path)
             model.set_active_adapters([DEBUG_ADAPTER_NM])
             model.eval()
 
             dset = load_dset(tokenizer=tokenizer)['test']
-            idxs_gen = group_n(range(len(dset)), n=bsz)
-            total = math.ceil(len(dset) / 8)
 
-            n_total, n_correct = 0, 0
-            for i_ba, idxs in enumerate(tqdm(idxs_gen, desc='Testing', total=total)):
+            tm = Timer()
+
+            label_options = ['Hateful', 'Non-hateful']
+            lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
+            n_sample = len(dset)
+
+            idxs_gen = group_n(range(len(dset)), n=bsz)
+            trues, preds = np.empty(n_sample, dtype=int), np.empty(n_sample, dtype=int)
+            n_it = math.ceil(len(dset) / 8)
+            it = tqdm(idxs_gen, desc='Testing', total=n_it)
+            d_it = dict(dataset_size=pl.i(len(dset)))
+            it.set_postfix(d_it)
+
+            df, acc_str = None, None
+            for i_ba, idxs in enumerate(it):
                 idxs = [int(idx) for idx in idxs]
                 inputs = {k: torch.tensor(v) for k, v in dset[idxs].items() if k not in ['text', 'label', 'labels']}
                 labels = dset[idxs]['label']
@@ -324,9 +342,30 @@ if __name__ == '__main__':
                     outputs = model.generate(**inputs, max_new_tokens=16)
                 lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
-                for lb, dec in zip(labels, lst_decoded):
-                    n_total += 1
+                for idx, lb, dec in zip(idxs, labels, lst_decoded):
                     if lb == dec:
-                        n_correct += 1
-            mic(n_correct / n_total)
+                        preds[idx] = trues[idx] = lb2id[lb]
+                    else:
+                        preds[idx] = lb2id[dec] if dec in lb2id else -1
+                        trues[idx] = lb2id[lb]
+
+                if i_ba + 1 == n_it:  # last iteration
+                    idx_lbs = list(range(len(label_options)))
+                    args = dict(
+                        labels=[-1, *idx_lbs], target_names=['Label not in dataset', *label_options],
+                        zero_division=0, output_dict=True
+                    )
+                    df, acc = eval_array2report_df(labels=trues, preds=preds, report_args=args, pretty=False)
+                    acc_str = f'{acc * 100:.1f}'
+                    d_it['cls_acc'] = pl.i(acc_str)
+                    it.set_postfix(d_it)
+
+            path = os_join(eval_output_path, f'{DEBUG_ADAPTER_NM}.csv')
+            df.to_csv(path)
+            logger.info(f'Accuracy {pl.i(acc_str)}')
+            logger_fl.info(f'Accuracy {acc_str}')
+
+            t_e = tm.end()
+            logger.info(f'Testing done in {pl.i(t_e)}')
+            logger_fl.info(f'Testing done in {t_e}')
     command_prompt()
