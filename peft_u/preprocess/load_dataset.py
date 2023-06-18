@@ -1,3 +1,4 @@
+import re
 import json
 import random
 from os.path import join as os_join
@@ -8,16 +9,22 @@ from torch.utils.data import Dataset
 
 from stefutil import *
 from peft_u.util import *
-from peft_u.preprocess.convert_data_format import PersonalizedDataset
 
 
 __all__ = [
+    'PersonalizedData', 'PersonalizedDataset',
     'InputEgDataset', 'ListDataset',
-    'load_dataset_with_prompts', 'iter_users'
+    'load_dataset_with_prompts', 'sort_user_ids', 'iter_users'
 ]
 
 
 logger = get_logger('Load Dataset')
+
+
+PersonalizedData = Dict[Any, Dict[str, Dict[str, Union[str, List[str]]]]]  # user_id -> sample id -> a dict of sample
+
+# user_id -> dataset split -> sample id -> a dict of sample
+PersonalizedDataset = Dict[str, Dict[str, Dict[str, Dict[str, Union[str, List[str]]]]]]
 
 
 class InputExample:
@@ -155,12 +162,32 @@ def load_dataset_with_prompts(
         )
 
 
+_USER_IDS = Union[List[str], List[int]]
+# For `SubjectiveDiscourse`, user ids are like `worker_50`
+sub_dis_pattern = re.compile(r'^worker_(?P<id>\d+)$')
+
+
+def sort_user_ids(uids: _USER_IDS) -> _USER_IDS:
+    if all(isinstance(uid, int) for uid in uids):
+        return sorted(uids)
+    else:
+        assert all(isinstance(uid, str) for uid in uids)
+        if all(uid.isdigit() for uid in uids):
+            sort_fn = int
+        else:
+            def sort_fn(x):
+                match = sub_dis_pattern.match(x)
+                assert match is not None
+                return int(match.group('id'))
+        return sorted(uids, key=sort_fn)
+
+
 def iter_users(
-        dataset: Dict[str, Any], start_from: Union[str, int] = None, end_at: Union[str, int] = None,
+        dataset: Dict[str, Any] = None, start_from: Union[str, int] = None, end_at: Union[str, int] = None,
         filter_fn: Callable = None
-):
+) -> List[str]:
     """
-    Deterministic ordering  of user ids
+    Deterministic ordering of user ids
 
     :param dataset: dataset dict
     :param start_from: user id to start from, inclusive

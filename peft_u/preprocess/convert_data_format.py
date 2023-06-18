@@ -1,8 +1,12 @@
+"""
+Utilities for data prepping standalone scripts
+"""
+
 import csv
 import json
 import random
 from os.path import join as os_join
-from typing import Tuple, List, Dict, Union, Any
+from typing import Tuple, List, Dict, Any
 from collections import defaultdict
 
 import nltk
@@ -11,21 +15,15 @@ from tqdm import tqdm
 
 from stefutil import *
 from peft_u.util import *
+from peft_u.preprocess.load_dataset import PersonalizedData, PersonalizedDataset, sort_user_ids
 
 
 __all__ = [
-    'PersonalizedData', 'PersonalizedDataset',
     'load_csv', 'data2dataset_splits', 'data2label_meta', 'avg_num_users_per_example', 'save_datasets'
 ]
 
 
 logger = get_logger('Convert Data Format')
-
-
-PersonalizedData = Dict[Any, Dict[str, Dict[str, Union[str, List[str]]]]]  # user_id -> sample id -> a dict of sample
-
-# user_id -> dataset split -> sample id -> a dict of sample
-PersonalizedDataset = Dict[str, Dict[str, Dict[str, Dict[str, Union[str, List[str]]]]]]
 
 
 def load_csv(path, delimiter=",", header=True):

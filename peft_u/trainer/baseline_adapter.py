@@ -18,17 +18,19 @@ from argparse import ArgumentParser
 import numpy as np
 import torch
 import transformers
+import datasets
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, T5TokenizerFast
 from transformers import HoulsbyConfig, IA3Config
 from transformers.adapters import T5AdapterModel
 from transformers import TrainingArguments, SchedulerType
 from transformers.training_args import OptimizerNames
 from datasets import Dataset, DatasetDict
-from tqdm import tqdm
 
 from stefutil import *
 from peft_u.util import *
+import peft_u.util.models as model_util
 import peft_u.util.train as train_util
+from peft_u.preprocess.load_dataset import *
 
 
 logger = get_logger('Adapter Baseline')
@@ -37,6 +39,23 @@ logger = get_logger('Adapter Baseline')
 HF_MODEL_NAME = 'google/flan-t5-base'
 ADAPTER_METHODS = ['Houlsby', 'IA3']
 DEFAULT_ADAPTER_METHOD = 'Houlsby'
+
+
+def reduce_hf_logging():
+    transformers.logging.set_verbosity_warning()
+    # Disables logs for 1) training & eval info, 2) saving adapter config, 3) saving adapter params
+    logger_nms = ['trainer', 'configuration_utils', 'adapters.loading']
+    for logger_nm in logger_nms:
+        logger_ = transformers.logging.get_logger(f'transformers.{logger_nm}')
+        logger_.setLevel(transformers.logging.WARN)
+    logger_ = transformers.logging.get_logger('transformers.modeling_utils')
+    logger_.setLevel(transformers.logging.ERROR)  # Disables checkpoint not loading `lm_head.weight` warning
+
+    # Disables warnings for 1) finding cached dataset, 2) saving & loading cached dataset
+    logger_nms = ['builder', 'arrow_dataset']
+    for logger_nm in logger_nms:
+        logger_ = datasets.logging.get_logger(f'datasets.{logger_nm}')
+        logger_.setLevel(datasets.logging.ERROR)
 
 
 def parse_args():
@@ -118,7 +137,7 @@ def load_adapter_model(
     return model
 
 
-def load_trained(model_name_or_path: str = None, user_id: str = None, logger_fl: Logger = None) -> T5AdapterModel:
+def load_trained(model_name_or_path: str = None, user_id: str = None) -> T5AdapterModel:
     model = load_t5_model_with_lm_head()
 
     model.load_adapter(adapter_name_or_path=model_name_or_path)
@@ -130,25 +149,19 @@ def load_trained(model_name_or_path: str = None, user_id: str = None, logger_fl:
 
 
 if __name__ == '__main__':
-    check_on_adapter()
+    dataset_name = 'tweeteval'  # TODO: developing
 
-    transformers.logging.set_verbosity_warning()
-    # Disables logs for 1) training & eval info, 2) saving adapter config, 3) saving adapter params
-    logger_nms = ['transformers.trainer', 'transformers.configuration_utils', 'transformers.adapters.loading']
-    for logger_nm in logger_nms:
-        logger_ = transformers.logging.get_logger(logger_nm)
-        logger_.setLevel(transformers.logging.WARN)
-    logger_ = transformers.logging.get_logger('transformers.modeling_utils')
-    logger_.setLevel(transformers.logging.ERROR)  # Disables checkpoint not loading `lm_head.weight` warning
+    check_on_adapter()
+    reduce_hf_logging()
 
     INSTR = "Please review the following text and indicate if it has the presence of hate speech. "\
             "Respond 'Hateful' if the text contains hate speech "\
             "and 'Non-hateful' if the text does not contain hate speech."
 
     def load_dset(tokenizer: T5TokenizerFast, tokenize: bool = True, **kwargs):
-        dnm, fnm = 'tweeteval', 'user_data_leaked'
-        with open(os_join(u.proj_path, u.dset_dir, dnm, f'{fnm}.json'), 'r') as f:
-            data = json.load(f)
+        fnm = 'user_data_leaked'
+        with open(os_join(u.proj_path, u.dset_dir, dataset_name, f'{fnm}.json'), 'r') as f:
+            data: PersonalizedDataset = json.load(f)
 
         def get_gen(user_data=None, split: str = None):
             def gen():
@@ -196,13 +209,8 @@ if __name__ == '__main__':
             seed = args.seed
             output_dir = args.output_dir
 
-            date = now(fmt='short-date')
-            _md_nm = model_name_or_path
-            if '/' in _md_nm:
-                org, _md_nm = _md_nm.split('/')
-            meta = dict(md_nm=_md_nm, adapter=method)
-            output_path = os_join(get_base_path(), u.proj_dir, u.model_dir, f'{date}_{pl.pa(meta)}_{output_dir}')
-            os.makedirs(output_path, exist_ok=True)
+            get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key='adapter')
+            output_path = model_util.get_train_output_path(**get_args, dataset_name=dataset_name)
             d_log = dict(
                 model_name_or_path=model_name_or_path, method=method,
                 # dataset_name=dataset_name, leakage=leakage,
@@ -219,7 +227,7 @@ if __name__ == '__main__':
             dsets = load_dset(tokenizer=tokenizer, remove_columns=['text', 'label'])
 
             def get_train_meta(user_id: str = None, verbose: bool = False) -> Tuple[TrainingArguments, Logger, str]:
-                output_path_ = os_join(output_path, f'User-{user_id}')
+                output_path_ = os_join(output_path, uid2u_str(user_id))
                 train_args = dict(
                     output_dir=output_path_,
                     do_train=True,
@@ -254,11 +262,12 @@ if __name__ == '__main__':
                 return train_args, logger_fl_, output_path_
 
             tm = Timer()
-            users = list(dsets.keys())
-            users = users[:4]  # TODO: debugging
-            n_user = len(users)
+            it = iter_users(dataset=dsets)[:4]  # TODO: debugging
+            n_user = len(it)
+            logger.info(f'Training on users {pl.i(it)}... ')
+            logger_fl.info(f'Training on users {it}... ')
 
-            for i, uid in enumerate(users, start=1):
+            for i, uid in enumerate(it, start=1):
                 dset = dsets[uid]
                 model = load_adapter_model(
                     model_name_or_path=model_name_or_path, adapter_method=method, user_id=uid, logger_fl=logger_fl
@@ -269,10 +278,8 @@ if __name__ == '__main__':
                     train_dataset=dset['train'], eval_dataset=dset['validation']
                 )
 
-                user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
-                dataset_name = 'tweeteval'  # TODO
-                logger.info(f'Launching {pl.i(dataset_name)} personalized training '
-                            f'for User {pl.i(uid)}({user_ordinal})...')
+                user_str_ordinal = train_util.get_user_str_w_ordinal(user_id=uid, user_idx=i, n_user=n_user)
+                logger.info(f'Launching {pl.i(dataset_name)} personalized training for User {user_str_ordinal}...')
 
                 transformers.set_seed(seed)
                 tm_ = Timer()
@@ -293,7 +300,6 @@ if __name__ == '__main__':
             date = now(fmt='short-date')
             eval_output_path = os_join(u.proj_path, 'eval', f'{model_name_or_path}_Eval-{date}')
             os.makedirs(eval_output_path, exist_ok=True)
-            mic(eval_output_path)
 
             d_log = dict(
                 model_name_or_path=model_name_or_path,
@@ -305,43 +311,36 @@ if __name__ == '__main__':
             logger_fl = get_logger('Adapter Test fl', kind='file-write', file_path=fnm)
             logger_fl.info(f'Testing Adapter w/ {d_log}...')
 
-            path_ = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
-            if not os.path.exists(path_):
-                path_ = model_name_or_path  # reset
-            model_name_or_path = path_
-
+            model_name_or_path = model_util.prepend_local_model_path(model_path=model_name_or_path)
             tokenizer = get_tokenizer(model_name_or_path=HF_MODEL_NAME)
             dsets = load_dset(tokenizer=tokenizer)
 
             tm_ = Timer()
 
-            label_options = ['Hateful', 'Non-hateful']
+            label_options = sconfig(f'datasets.{dataset_name}.labels')
             lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
 
-            users = list(dsets.keys())
-            users = users[:4]  # TODO: debugging
-            n_user = len(users)
-            logger.info(f'Testing on users {pl.i(users)}... ')
-            logger_fl.info(f'Testing on users {users}... ')
+            it = iter_users(dataset=dsets)[:4]  # TODO: debugging
+            n_user = len(it)
+            logger.info(f'Testing on users {pl.i(it)}... ')
+            logger_fl.info(f'Testing on users {it}... ')
 
             accs = dict()
-            for i, uid in enumerate(users, start=1):
+            for i, uid in enumerate(it, start=1):
                 dset = dsets[uid]['test']
 
-                user_str = f'User-{uid}'  # load trained model for each user
+                user_str = uid2u_str(uid)  # load trained model for each user
                 path = os_join(model_name_or_path, user_str, 'trained')
                 assert os.path.exists(path)  # sanity check
-                model = load_trained(model_name_or_path=path, user_id=uid, logger_fl=logger_fl)
+                model = load_trained(model_name_or_path=path, user_id=uid)
 
                 n_sample = len(dset)
                 trues, preds = np.empty(n_sample, dtype=int), np.empty(n_sample, dtype=int)
 
-                idxs_gen = group_n(range(len(dset)), n=bsz)
-                user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
-                desc = f'{pl.i(now(for_path=True, color=True))} Testing on User {pl.i(uid)}({user_ordinal})'
-                n_it = math.ceil(len(dset) / 8)
-                it = tqdm(idxs_gen, desc=desc, total=n_it)
-                d_it = dict(dataset_size=pl.i(len(dset)))
+                n_it = math.ceil(n_sample / 8)
+                user_args = dict(user_id=uid, user_idx=i, n_user=n_user)
+                it = train_util.get_user_test_pbar(it=group_n(range(n_sample), n=bsz), **user_args, total=n_it)
+                d_it = dict(dataset_size=pl.i(n_sample))
                 it.set_postfix(d_it)
 
                 for i_ba, idxs in enumerate(it):
@@ -363,26 +362,12 @@ if __name__ == '__main__':
                             trues[idx] = lb2id[lb]
 
                     if i_ba + 1 == n_it:  # last iteration
-                        idx_lbs = list(range(len(label_options)))
-                        args = dict(
-                            labels=[-1, *idx_lbs], target_names=['Label not in dataset', *label_options],
-                            zero_division=0, output_dict=True
+                        accs[uid] = train_util.test_user_update_postfix_n_write_df(
+                            label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
+                            df_out_path=os_join(eval_output_path, f'{user_str}.csv')
                         )
-                        df, acc = eval_array2report_df(labels=trues, preds=preds, report_args=args, pretty=False)
-                        acc_str = f'{acc * 100:.1f}'
-                        d_it['cls_acc'] = pl.i(acc_str)
-                        it.set_postfix(d_it)
-
-                        df.to_csv(os_join(eval_output_path, f'{user_str}.csv'))
-                        accs[uid] = acc
-
-            dataset_name = 'tweeteval'  # TODO: dynamic
-            acc_avg = np.mean(list(accs.values()))
-            acc_avg_str = f'{acc_avg*100:.1f}'
-            logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg_str)}')
-            logger_fl.info(f'Dataset {dataset_name} macro-avg acc: {acc_avg_str}')
-            with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
-                json.dump(accs, f, indent=4)
+            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path)
+            train_util.log_n_save_test_results(dataset_name=dataset_name, **out_args)
 
             t_e_ = tm_.end()
             logger.info(f'Testing done in {pl.i(t_e_)}')
