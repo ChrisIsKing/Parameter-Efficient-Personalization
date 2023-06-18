@@ -1,15 +1,21 @@
+import json
 import math
 from os.path import join as os_join
-from typing import Dict
+from typing import Dict, List
 from logging import Logger
 
+import numpy as np
 from transformers import Trainer, AdapterTrainer, TrainingArguments, TrainerCallback
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 from stefutil import *
 
 
-_all__ = ['TqdmPostfixCallback', 'MyAdapterTrainer']
+_all__ = [
+    'TqdmPostfixCallback', 'MyAdapterTrainer',
+    'get_user_str_w_ordinal', 'get_user_test_pbar', 'test_user_update_postfix_n_write_df', 'log_n_save_test_results'
+]
 
 
 logger = get_logger('Train Util')
@@ -61,3 +67,46 @@ class MyAdapterTrainer(AdapterTrainer):
         cos the `AdapterTrainer` implementation forces using HF's AdamW
         """
         super(AdapterTrainer, self).create_optimizer()
+
+
+def get_user_str_w_ordinal(user_id: str = None, user_idx: int = None, n_user: int = None):
+    """
+    Intended for terminal output
+    """
+    user_ordinal = f'{pl.i(user_idx)}/{pl.i(n_user)}'
+    return f'{pl.i(user_id)}({user_ordinal})'
+
+
+def get_user_test_pbar(it=None, user_id: str = None, user_idx: int = None, n_user: int = None, **kwargs):
+    desc = f'{pl.i(now(for_path=True, color=True))} Testing on User {get_user_str_w_ordinal(user_id, user_idx, n_user)}'
+    return tqdm(it, desc=desc, **kwargs)
+
+
+def test_user_update_postfix_n_write_df(
+        label_options: List[str] = None, trues: np.ndarray = None, preds: np.ndarray = None,
+        pbar: tqdm = None, d_postfix: Dict = None, df_out_path: str = None
+) -> float:
+    idx_lbs = list(range(len(label_options)))
+    args = dict(
+        labels=[-1, *idx_lbs], target_names=['Label not in dataset', *label_options],
+        zero_division=0, output_dict=True
+    )
+    df, acc = eval_array2report_df(labels=trues, preds=preds, report_args=args, pretty=False)
+    acc_str = f'{acc * 100:.1f}'
+    d_postfix['cls_acc'] = pl.i(acc_str)
+    pbar.set_postfix(d_postfix)
+
+    df.to_csv(df_out_path)
+    return acc
+
+
+def log_n_save_test_results(
+        d_accs: Dict[str, float] = None, dataset_name: str = None, logger_fl: Logger = None,
+        eval_output_path: str = None
+):
+    acc_avg = np.mean(list(d_accs.values()))
+    acc_avg_str = f'{acc_avg * 100:.1f}'
+    logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg_str)}')
+    logger_fl.info(f'Dataset {dataset_name} macro-avg acc: {acc_avg_str}')
+    with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
+        json.dump(d_accs, f, indent=4)

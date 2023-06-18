@@ -1,5 +1,4 @@
 import os
-import json
 from os.path import join as os_join
 from typing import Tuple, List, Dict, Union, Callable
 from logging import Logger
@@ -7,9 +6,7 @@ from argparse import ArgumentParser
 from functools import partial
 
 import numpy as np
-import pandas as pd
 import torch
-import transformers
 from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForSeq2SeqLM,
@@ -36,6 +33,7 @@ from torch.utils.tensorboard import SummaryWriter
 from stefutil import *
 from peft_u.util import *
 import peft_u.util.models as model_util
+import peft_u.util.train as train_util
 from peft_u.preprocess.load_dataset import *
 
 
@@ -146,7 +144,7 @@ def train_single(
         batch_size: int = 8, num_epochs: int = 3, learning_rate: float = 2e-5, weight_decay: float = 0.01,
         output_path: str = None, user_id: str = None, verbose: bool = False, save_per_epoch: bool = True
 ):
-    output_path = os_join(output_path, f'User-{user_id}')
+    output_path = os_join(output_path, uid2u_str(user_id))
 
     def _save(dir_nm: str):
         model.save_pretrained(os_join(output_path, dir_nm))
@@ -305,8 +303,9 @@ def _lenient_decoded(allowed_suffixes: List[str] = None, label_options: List[str
 
 def test_single(
         model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: ListDataset = None, dataset_name: str = None,
-        batch_size: int = 8, tqdm_desc: str = None, user_id: str = None, logger_fl: Logger = None,
-) -> Tuple[pd.DataFrame, float]:
+        batch_size: int = 8, user_id: str = None, user_idx: int = None, n_user: int = None,
+        logger_fl: Logger = None, eval_output_path: str = None
+) -> float:
     label_options = sconfig(f'datasets.{dataset_name}.labels')
     lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
     n_sample = len(dataset)
@@ -315,7 +314,8 @@ def test_single(
     ts_dl = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn)
 
     trues, preds = np.empty(n_sample, dtype=int), np.empty(n_sample, dtype=int)
-    it = tqdm(ts_dl, desc=tqdm_desc or 'Testing ')
+    user_args = dict(user_id=user_id, user_idx=user_idx, n_user=n_user)
+    it = train_util.get_user_test_pbar(it=ts_dl, **user_args)
     d_it = dict(dataset_size=pl.i(len(dataset)))
     it.set_postfix(d_it)
 
@@ -363,15 +363,20 @@ def test_single(
                 preds[i_sample] = lb2id[decoded[0]]
 
         if i_ba + 1 == n_ba:  # last iteration
-            idx_lbs = list(range(len(label_options)))
-            args = dict(
-                labels=[-1, *idx_lbs], target_names=['Label not in dataset', *label_options],
-                zero_division=0, output_dict=True
+            # idx_lbs = list(range(len(label_options)))
+            # args = dict(
+            #     labels=[-1, *idx_lbs], target_names=['Label not in dataset', *label_options],
+            #     zero_division=0, output_dict=True
+            # )
+            # ret = df, acc = eval_array2report_df(labels=trues, preds=preds, report_args=args, pretty=False)
+            # acc_str = f'{acc*100:.1f}'
+            # d_it['cls_acc'] = pl.i(acc_str)
+            # it.set_postfix(d_it)
+
+            ret = train_util.test_user_update_postfix_n_write_df(
+                label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
+                df_out_path=os_join(eval_output_path, uid2u_str(user_id))
             )
-            ret = df, acc = eval_array2report_df(labels=trues, preds=preds, report_args=args, pretty=False)
-            acc_str = f'{acc*100:.1f}'
-            d_it['cls_acc'] = pl.i(acc_str)
-            it.set_postfix(d_it)
     return ret
 
 
@@ -388,7 +393,7 @@ def _get_dataset_and_users_it(
     #
     #     def filt(x):
     #         return x not in lst_filt
-    it = iter_users(dset, start_from=uid_start_from, filter_fn=filt)
+    it = iter_users(dataset=dset, start_from=uid_start_from, filter_fn=filt)
     return dset, it
 
 
@@ -406,10 +411,8 @@ if __name__ == '__main__':
             seed = args.seed
             output_dir = args.output_dir
 
-            map_args = dict(model_name=model_name_or_path, name=output_dir, peft_approach=method)
-            out_dir_nm = model_util.map_output_dir_nm(**map_args, dataset_name=dataset_name)
-            output_path = os_join(get_base_path(), u.proj_dir, u.model_dir, out_dir_nm)
-            os.makedirs(output_path, exist_ok=True)
+            get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key='peft')
+            output_path = model_util.get_train_output_path(**get_args, dataset_name=dataset_name)
 
             d_log = dict(
                 model_name_or_path=model_name_or_path, method=method,
@@ -451,9 +454,8 @@ if __name__ == '__main__':
                     d_log = dict(user=uid) | _get_dataset_sizes(dset[uid])
                     it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
                 else:
-                    user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
-                    logger.info(f'Launching {pl.i(dataset_name)} personalized training '
-                                f'for User {pl.i(uid)}({user_ordinal})...')
+                    user_str_ordinal = train_util.get_user_str_w_ordinal(user_id=uid, user_idx=i, n_user=n_user)
+                    logger.info(f'Launching {pl.i(dataset_name)} personalized training for User {user_str_ordinal}...')
                 tm_ = Timer()
 
                 # # if any dataset split is empty, skip
@@ -507,28 +509,21 @@ if __name__ == '__main__':
                 load_args = dict(verbose=True, logger_fl=logger_fl)
                 model, tokenizer = load_model_n_tokenizer(model_name_or_path=model_name_or_path, **load_args)
                 model.eval()
+            model_name_or_path = model_util.prepend_local_model_path(model_path=model_name_or_path)
 
             # strt = 29044976  # unhealthyconversations
             strt = None
             dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage, uid_start_from=strt)
             n_user = len(it)
-            path_ = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
-            if not os.path.exists(path_):
-                path_ = model_name_or_path  # reset
-            model_name_or_path = path_
-
             logger.info(f'Testing on users {pl.i(it)}... ')
             logger_fl.info(f'Testing on users {it}... ')
 
             accs = dict()
             for i, uid in enumerate(it, start=1):
                 ts = ListDataset(dset[uid].test)
-                user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
-                desc = f'{pl.i(now(for_path=True, color=True))} Testing on User {pl.i(uid)}({user_ordinal})'
 
-                user_str = f'User-{uid}'
                 if not zeroshot:  # load trained model for each user
-                    path = os_join(model_name_or_path, user_str, 'trained')
+                    path = os_join(model_name_or_path, uid2u_str(uid), 'trained')
                     assert os.path.exists(path)  # sanity check
 
                     model, tokenizer = load_trained(model_name_or_path=path)
@@ -536,20 +531,13 @@ if __name__ == '__main__':
                 #     logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
                 #     continue
 
-                df, acc = test_single(
-                    model=model, tokenizer=tokenizer, dataset=ts, batch_size=bsz,
-                    dataset_name=dataset_name, tqdm_desc=desc, user_id=uid, logger_fl=logger_fl
+                accs[uid] = test_single(
+                    model=model, tokenizer=tokenizer, dataset=ts, batch_size=bsz, dataset_name=dataset_name,
+                    user_id=uid, user_idx=i, n_user=n_user, logger_fl=logger_fl, eval_output_path=eval_output_path
                 )
-                df.to_csv(os_join(eval_output_path, f'{user_str}.csv'))
-
-                accs[uid] = acc
                 # del model
-            acc_avg = np.mean(list(accs.values()))
-            acc_avg_str = f'{acc_avg*100:.1f}'
-            logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg_str)}')
-            logger_fl.info(f'Dataset {dataset_name} macro-avg acc: {acc_avg_str}')
-            with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
-                json.dump(accs, f, indent=4)
+            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path)
+            train_util.log_n_save_test_results(dataset_name=dataset_name, **out_args)
 
             t_e = tm.end()
             logger.info(f'Testing done in {pl.i(t_e)}')
