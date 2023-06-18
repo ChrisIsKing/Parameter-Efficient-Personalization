@@ -35,12 +35,12 @@ from peft_u.util import *
 import peft_u.util.models as model_util
 import peft_u.util.train as train_util
 from peft_u.preprocess.load_dataset import *
+from peft_u.trainer import HF_MODEL_NAME, parse_train_n_test_args
 
 
 logger = get_logger('PEFT Baseline')
 
 
-HF_MODEL_NAME = 'google/flan-t5-base'
 PEFT_METHODS = ["lora", "prefix", "p_tuning", "prompt_tuning"]
 DEFAULT_PEFT_METHOD = 'lora'
 
@@ -48,28 +48,11 @@ DEFAULT_PEFT_METHOD = 'lora'
 def parse_args():
     parser = ArgumentParser()
     subparsers = parser.add_subparsers(dest="mode", required=True)
-    train_parser = subparsers.add_parser("train")
-    test_parser = subparsers.add_parser("test")
-
-    dataset_names = list(sconfig('datasets'))
-
-    train_parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
-    train_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
-    train_parser.add_argument("--leakage", type=bool, required=False, default=True)
+    train_parser, test_parser = parse_train_n_test_args(
+        train_parser=subparsers.add_parser('train'), test_parser=subparsers.add_parser('test')
+    )
     train_parser.add_argument("--method", type=str, required=False, default=DEFAULT_PEFT_METHOD, choices=PEFT_METHODS)
-    train_parser.add_argument("--batch_size", type=int, required=False, default=8)
-    train_parser.add_argument("--num_epochs", type=int, required=False, default=8)
-    train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
-    train_parser.add_argument("--weight_decay", type=float, required=False, default=0.01)
-    train_parser.add_argument("--seed", type=int, required=False, default=42)
-    train_parser.add_argument("--output_dir", type=str, required=False, default=None)
-
-    test_parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
     test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
-    test_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
-    test_parser.add_argument("--leakage", type=str, required=False, default=True)
-    test_parser.add_argument("--batch_size", type=int, required=False, default=8)
-
     return parser.parse_args()
 
 
@@ -363,16 +346,6 @@ def test_single(
                 preds[i_sample] = lb2id[decoded[0]]
 
         if i_ba + 1 == n_ba:  # last iteration
-            # idx_lbs = list(range(len(label_options)))
-            # args = dict(
-            #     labels=[-1, *idx_lbs], target_names=['Label not in dataset', *label_options],
-            #     zero_division=0, output_dict=True
-            # )
-            # ret = df, acc = eval_array2report_df(labels=trues, preds=preds, report_args=args, pretty=False)
-            # acc_str = f'{acc*100:.1f}'
-            # d_it['cls_acc'] = pl.i(acc_str)
-            # it.set_postfix(d_it)
-
             ret = train_util.test_user_update_postfix_n_write_df(
                 label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
                 df_out_path=os_join(eval_output_path, uid2u_str(user_id))
@@ -381,11 +354,11 @@ def test_single(
 
 
 def _get_dataset_and_users_it(
-        dataset_name: str, leakage: bool = False, uid_start_from: Union[str, int] = None
+        dataset_name: str, leakage: bool = False, uid_start_from: Union[str, int] = None, seed: int = None
 ) -> Tuple[Dict[str, InputEgDataset], List[str]]:
     # from peft_u._dset_uid_too_small import uid_too_small
 
-    dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage)
+    dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed)
 
     filt = None
     # if dataset_name in uid_too_small:
@@ -406,25 +379,8 @@ if __name__ == '__main__':
         if cmd == 'train':
             model_name_or_path, method = args.model, args.method
             dataset_name, leakage = args.dataset_name, args.leakage
-            batch_size, num_epochs, learning_rate = args.batch_size, args.num_epochs, args.learning_rate
-            weight_decay = args.weight_decay
             seed = args.seed
-            output_dir = args.output_dir
-
-            get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key='peft')
-            output_path = model_util.get_train_output_path(**get_args, dataset_name=dataset_name)
-
-            d_log = dict(
-                model_name_or_path=model_name_or_path, method=method,
-                dataset_name=dataset_name, leakage=leakage,
-                batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate, weight_decay=weight_decay,
-                seed=seed,
-                output_dir=output_dir, output_path=output_path
-            )
-            fnm = os_join(output_path, f'train_{now(for_path=True)}.log')
-            logger_fl = get_logger('PEFT Train fl', kind='file-write', file_path=fnm)
-            logger.info(f'Training PEFT w/ {pl.i(d_log)}...')
-            logger_fl.info(f'Training PEFT w/ {d_log}...')
+            output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='peft')
 
             # strt = 23  # goemotion
             # strt = 28  # hatexplain
@@ -436,7 +392,8 @@ if __name__ == '__main__':
             # strt = 1682  # `wikidetox`
             # strt = '45214884'  # `unhealthyconversations`
             # strt = None
-            dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage, uid_start_from=strt)
+            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
+            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
             md_load_args = dict(peft_method=method, logger_fl=logger_fl)
 
             tm = Timer()
@@ -468,8 +425,8 @@ if __name__ == '__main__':
                 model, tokenizer = load_model_n_tokenizer(model_name_or_path, **md_load_args)
                 train_single(
                     model=model, tokenizer=tokenizer, dataset=dset[uid], seed=seed,
-                    batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
-                    weight_decay=weight_decay, output_path=output_path, user_id=uid, save_per_epoch=False
+                    batch_size=args.batch_size, num_epochs=args.num_epochs, learning_rate=args.learning_rate,
+                    weight_decay=args.weight_decay, output_path=output_path, user_id=uid, save_per_epoch=False
                 )
                 t_e_ = tm_.end()
                 if not global_tqdm:
@@ -483,6 +440,7 @@ if __name__ == '__main__':
             model_name_or_path = args.model
             dataset_name, leakage = args.dataset_name, args.leakage
             bsz = args.batch_size
+            seed = args.seed
             zeroshot = args.zeroshot
 
             date = now(fmt='short-date')
@@ -513,7 +471,8 @@ if __name__ == '__main__':
 
             # strt = 29044976  # unhealthyconversations
             strt = None
-            dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage, uid_start_from=strt)
+            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
+            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
             n_user = len(it)
             logger.info(f'Testing on users {pl.i(it)}... ')
             logger_fl.info(f'Testing on users {it}... ')
