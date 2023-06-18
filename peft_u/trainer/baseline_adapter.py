@@ -28,15 +28,16 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from stefutil import *
+from peft_u.util import *
 
 
 logger = get_logger('Adapter Baseline')
 
 
-_DIRS = __file__.split(os.sep)
-BASE_PATH, PROJ_DIR, PKG_DIR = os.sep.join(_DIRS[:-3]), _DIRS[-3], _DIRS[-2]
-DSET_DIR = 'data'
-MODEL_DIR = 'models'
+# _DIRS = __file__.split(os.sep)
+# BASE_PATH, PROJ_DIR, PKG_DIR = os.sep.join(_DIRS[:-3]), _DIRS[-3], _DIRS[-2]
+# DSET_DIR = 'data'
+# MODEL_DIR = 'models'
 
 
 HF_MODEL_NAME = 'google/flan-t5-base'
@@ -209,7 +210,7 @@ if __name__ == '__main__':
 
     def load_dset(tokenizer: T5TokenizerFast, tokenize: bool = True, **kwargs):
         dnm, fnm = 'tweeteval', 'user_data_leaked'
-        with open(os_join(BASE_PATH, PROJ_DIR, DSET_DIR, dnm, f'{fnm}.json'), 'r') as f:
+        with open(os_join(u.proj_path, u.dset_dir, dnm, f'{fnm}.json'), 'r') as f:
             data = json.load(f)
 
         def get_gen(user_data=None, split: str = None):
@@ -265,7 +266,7 @@ if __name__ == '__main__':
             if '/' in _md_nm:
                 org, _md_nm = _md_nm.split('/')
             meta = dict(md_nm=_md_nm, adapter=method)
-            output_path = os_join(BASE_PATH, PROJ_DIR, f'{date}_{pl.pa(meta)}_{output_dir}')
+            output_path = os_join(get_base_path(), u.proj_dir, u.model_dir, f'{date}_{pl.pa(meta)}_{output_dir}')
             os.makedirs(output_path, exist_ok=True)
             d_log = dict(
                 model_name_or_path=model_name_or_path, method=method,
@@ -355,7 +356,7 @@ if __name__ == '__main__':
             bsz = args.batch_size
 
             date = now(fmt='short-date')
-            eval_output_path = os_join(BASE_PATH, PROJ_DIR, 'eval', f'{model_name_or_path}_Eval-{date}')
+            eval_output_path = os_join(u.proj_path, 'eval', f'{model_name_or_path}_Eval-{date}')
             os.makedirs(eval_output_path, exist_ok=True)
             mic(eval_output_path)
 
@@ -369,7 +370,7 @@ if __name__ == '__main__':
             logger_fl = get_logger('Adapter Test fl', kind='file-write', file_path=fnm)
             logger_fl.info(f'Testing Adapter w/ {d_log}...')
 
-            path_ = os_join(BASE_PATH, PROJ_DIR, MODEL_DIR, model_name_or_path)
+            path_ = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
             if not os.path.exists(path_):
                 path_ = model_name_or_path  # reset
             model_name_or_path = path_
