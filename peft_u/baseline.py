@@ -9,6 +9,7 @@ from functools import partial
 import numpy as np
 import pandas as pd
 import torch
+import transformers
 from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForSeq2SeqLM,
@@ -44,6 +45,13 @@ logger = get_logger('PEFT Baseline')
 HF_MODEL_NAME = 'google/flan-t5-base'
 PEFT_METHODS = ["lora", "prefix", "p_tuning", "prompt_tuning"]
 DEFAULT_PEFT_METHOD = 'lora'
+
+
+def check_not_on_adapter():
+    d_log = dict(transformers_version=transformers.__version__)
+    logger.info(pl.i(d_log))
+    if hasattr(transformers, 'adapters'):
+        raise ImportError('This script is intended for `transformers`, not the forked `adapter-transformers`')
 
 
 def parse_args():
@@ -397,6 +405,8 @@ def _get_dataset_and_users_it(
 
 
 if __name__ == '__main__':
+    check_not_on_adapter()
+
     def command_prompt():
         args = parse_args()
         cmd = args.mode
@@ -546,8 +556,7 @@ if __name__ == '__main__':
                         model=model, tokenizer=tokenizer, dataset=ts, batch_size=bsz,
                         dataset_name=dataset_name, tqdm_desc=desc, user_id=uid, logger_fl=logger_fl
                     )
-                    path = os_join(eval_output_path, f'{user_str}.csv')
-                    df.to_csv(path)
+                    df.to_csv(os_join(eval_output_path, f'{user_str}.csv'))
 
                     accs[uid] = acc
                     # del model
