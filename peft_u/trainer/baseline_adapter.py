@@ -11,7 +11,7 @@ import math
 import os
 import json
 from os.path import join as os_join
-from typing import Tuple, Dict
+from typing import Tuple
 from logging import Logger
 from argparse import ArgumentParser
 
@@ -21,37 +21,22 @@ import transformers
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, T5TokenizerFast
 from transformers import HoulsbyConfig, IA3Config
 from transformers.adapters import T5AdapterModel
-from transformers import Trainer, AdapterTrainer, TrainingArguments, TrainerCallback, SchedulerType
+from transformers import TrainingArguments, SchedulerType
 from transformers.training_args import OptimizerNames
 from datasets import Dataset, DatasetDict
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from stefutil import *
 from peft_u.util import *
+import peft_u.util.train as train_util
 
 
 logger = get_logger('Adapter Baseline')
 
 
-# _DIRS = __file__.split(os.sep)
-# BASE_PATH, PROJ_DIR, PKG_DIR = os.sep.join(_DIRS[:-3]), _DIRS[-3], _DIRS[-2]
-# DSET_DIR = 'data'
-# MODEL_DIR = 'models'
-
-
 HF_MODEL_NAME = 'google/flan-t5-base'
 ADAPTER_METHODS = ['Houlsby', 'IA3']
 DEFAULT_ADAPTER_METHOD = 'Houlsby'
-
-
-def check_on_adapter():
-    try:
-        d_log = dict(transformers_version=transformers.__version__, adapter_version=transformers.adapters.__version__)
-        logger.info(pl.i(d_log))
-    except AttributeError:
-        raise ImportError('This script is intended for `adapter-transformers`, '
-                          'please install `adapter-transformers` instead of `transformers`')
 
 
 def parse_args():
@@ -133,54 +118,6 @@ def load_adapter_model(
     return model
 
 
-class TqdmPostfixCallback(TrainerCallback):
-    def __init__(self, trainer: Trainer = None, logger_fl: Logger = None):
-        args = trainer.args
-        n_ep = args.num_train_epochs
-        bsz = args.per_device_train_batch_size * args.gradient_accumulation_steps
-        n_data = len(trainer.train_dataset)
-        n_step = max(math.ceil(n_data / bsz), 1) * n_ep
-        mp = MlPrettier(ref=dict(step=n_step, epoch=n_ep))
-
-        writer = SummaryWriter(os_join(trainer.args.output_dir, 'tensorboard'))
-        self.ls = LogStep(trainer=trainer, prettier=mp, logger=logger, file_logger=logger_fl, tb_writer=writer)
-
-    def on_log(self, args: TrainingArguments, state, control, logs: Dict = None, **kwargs):
-        step = state.global_step
-        if 'loss' in logs:  # training step
-            d_log = dict(epoch=state.epoch, step=step+1)  # 1-indexed
-            d_log.update(dict(lr=logs['learning_rate'], loss=logs['loss']))
-            self.ls(d_log, training=True, to_console=False)
-        elif 'eval_loss' in logs:  # eval for each epoch
-            n_ep = logs['epoch']
-            assert n_ep.is_integer()
-            d_log = dict(epoch=int(n_ep), loss=logs['eval_loss'])
-            self.ls(d_log, training=False, to_console=False)
-        else:
-            logger.info(pl.i(logs))
-
-
-class MyAdapterTrainer(AdapterTrainer):
-    def __init__(self, logger_fl: Logger = None, **kwargs):
-        super(MyAdapterTrainer, self).__init__(**kwargs)
-
-        callbacks = self.callback_handler.callbacks
-        self.callback_handler.callbacks = [  # Remove internal callback
-            c for c in callbacks if str(c.__class__) != "<class 'transformers.trainer_callback.PrinterCallback'>"
-        ]
-
-        self.add_callback(MyProgressCallback())
-
-        self.add_callback(TqdmPostfixCallback(trainer=self, logger_fl=logger_fl))
-
-    def create_optimizer(self):
-        """
-        Use the implementation from original HuggingFace Trainer class
-        cos the `AdapterTrainer` implementation forces using HF's AdamW
-        """
-        super(AdapterTrainer, self).create_optimizer()
-
-
 def load_trained(model_name_or_path: str = None, user_id: str = None, logger_fl: Logger = None) -> T5AdapterModel:
     model = load_t5_model_with_lm_head()
 
@@ -247,8 +184,6 @@ if __name__ == '__main__':
             return {uid: u_dset.map(map_single, batched=True, **kwargs) for uid, u_dset in dsets.items()}
         else:
             return dsets
-
-    # DEBUG_ADAPTER_NM = 'debug'
 
     def command_prompt():
         args = parse_args()
@@ -329,7 +264,7 @@ if __name__ == '__main__':
                     model_name_or_path=model_name_or_path, adapter_method=method, user_id=uid, logger_fl=logger_fl
                 )
                 args, logger_fl__, output_path__ = get_train_meta(user_id=uid)
-                trainer = MyAdapterTrainer(
+                trainer = train_util.MyAdapterTrainer(
                     logger_fl=logger_fl__, model=model, args=args, tokenizer=tokenizer,
                     train_dataset=dset['train'], eval_dataset=dset['validation']
                 )

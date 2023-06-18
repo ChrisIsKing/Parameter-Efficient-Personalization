@@ -47,13 +47,6 @@ PEFT_METHODS = ["lora", "prefix", "p_tuning", "prompt_tuning"]
 DEFAULT_PEFT_METHOD = 'lora'
 
 
-def check_not_on_adapter():
-    d_log = dict(transformers_version=transformers.__version__)
-    logger.info(pl.i(d_log))
-    if hasattr(transformers, 'adapters'):
-        raise ImportError('This script is intended for `transformers`, not the forked `adapter-transformers`')
-
-
 def parse_args():
     parser = ArgumentParser()
     subparsers = parser.add_subparsers(dest="mode", required=True)
@@ -71,23 +64,20 @@ def parse_args():
     train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
     train_parser.add_argument("--weight_decay", type=float, required=False, default=0.01)
     train_parser.add_argument("--seed", type=int, required=False, default=42)
-    train_parser.add_argument("--device", type=str, required=False, default="cuda")
     train_parser.add_argument("--output_dir", type=str, required=False, default=None)
-    train_parser.add_argument('--personalize', type=bool, required=False, default=True)
 
     test_parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
     test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
     test_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
     test_parser.add_argument("--leakage", type=str, required=False, default=True)
     test_parser.add_argument("--batch_size", type=int, required=False, default=8)
-    test_parser.add_argument('--personalize', type=bool, default=True)
 
     return parser.parse_args()
 
 
 def load_model_n_tokenizer(
         model_name_or_path: str = HF_MODEL_NAME, peft_method: str = DEFAULT_PEFT_METHOD,
-        device: str = 'cuda', verbose: bool = False, logger_fl: Logger = None
+        verbose: bool = False, logger_fl: Logger = None
 ) -> Tuple[PeftModel, PreTrainedTokenizer]:
     cache_dir = model_util.get_hf_cache_dir()
     if verbose:
@@ -126,12 +116,8 @@ def load_model_n_tokenizer(
     if logger_fl:
         logger_fl.info(f'Model info: {model_meta}')
 
-    if torch.cuda.is_available() and device == 'cuda':
-        if verbose:
-            logger.info(f'Moving model to {pl.i(device)}...')
-        if logger_fl:
-            logger_fl.info(f'Moving model to {device}...')
-        model.to(device)
+    if torch.cuda.is_available():
+        model.cuda()
     return model, tokenizer
 
 
@@ -156,7 +142,7 @@ def _get_dataset_sizes(dataset: InputEgDataset):
 
 def train_single(
         model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: InputEgDataset,
-        device: str = 'cuda', seed: int = 42,
+        seed: int = 42,
         batch_size: int = 8, num_epochs: int = 3, learning_rate: float = 2e-5, weight_decay: float = 0.01,
         output_path: str = None, user_id: str = None, verbose: bool = False, save_per_epoch: bool = True
 ):
@@ -204,7 +190,8 @@ def train_single(
         tr_desc = f'Train Epoch {pl.i(epoch)}/{pl.i(num_epochs)}'
         it = tqdm(enumerate(train_dataloader, start=1), desc=tr_desc, total=n_step_per_epoch)
         for step, batch in it:
-            batch = {k: v.to(device) for k, v in batch.items()}
+            if torch.cuda.is_available():
+                batch = {k: v.cuda() for k, v in batch.items()}
             outputs = model(**batch)
             loss = outputs.loss
             loss_item = loss.detach().item()
@@ -233,7 +220,8 @@ def train_single(
 
         eval_epoch_loss = None
         for step, batch in it:
-            batch = {k: v.to(device) for k, v in batch.items()}
+            if torch.cuda.is_available():
+                batch = {k: v.cuda() for k, v in batch.items()}
             with torch.no_grad():
                 outputs = model(**batch)
             cum_eval_loss += outputs.loss.detach().item()
@@ -412,10 +400,10 @@ if __name__ == '__main__':
         cmd = args.mode
         if cmd == 'train':
             model_name_or_path, method = args.model, args.method
-            dataset_name, leakage, personalize = args.dataset_name, args.leakage, args.personalize
+            dataset_name, leakage = args.dataset_name, args.leakage
             batch_size, num_epochs, learning_rate = args.batch_size, args.num_epochs, args.learning_rate
             weight_decay = args.weight_decay
-            seed, device = args.seed, args.device
+            seed = args.seed
             output_dir = args.output_dir
 
             map_args = dict(model_name=model_name_or_path, name=output_dir, peft_approach=method)
@@ -425,9 +413,9 @@ if __name__ == '__main__':
 
             d_log = dict(
                 model_name_or_path=model_name_or_path, method=method,
-                dataset_name=dataset_name, leakage=leakage, personalize=personalize,
+                dataset_name=dataset_name, leakage=leakage,
                 batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate, weight_decay=weight_decay,
-                seed=seed, device=device,
+                seed=seed,
                 output_dir=output_dir, output_path=output_path
             )
             fnm = os_join(output_path, f'train_{now(for_path=True)}.log')
@@ -446,55 +434,52 @@ if __name__ == '__main__':
             # strt = '45214884'  # `unhealthyconversations`
             # strt = None
             dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage, uid_start_from=strt)
-            md_load_args = dict(peft_method=method, device=device, logger_fl=logger_fl)
+            md_load_args = dict(peft_method=method, logger_fl=logger_fl)
 
             tm = Timer()
-            if personalize:
-                # global_tqdm = True
-                global_tqdm = False
+            # global_tqdm = True
+            global_tqdm = False
 
-                n_user = len(it)
-                logger.info(f'Training on users {pl.i(it)}... ')
-                logger_fl.info(f'Training on users {it}... ')
+            n_user = len(it)
+            logger.info(f'Training on users {pl.i(it)}... ')
+            logger_fl.info(f'Training on users {it}... ')
+            if global_tqdm:
+                it = tqdm(it, desc=f'Training on {pl.i(dataset_name)}')
+
+            for i, uid in enumerate(it, start=1):
                 if global_tqdm:
-                    it = tqdm(it, desc=f'Training on {pl.i(dataset_name)}')
+                    d_log = dict(user=uid) | _get_dataset_sizes(dset[uid])
+                    it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
+                else:
+                    user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
+                    logger.info(f'Launching {pl.i(dataset_name)} personalized training '
+                                f'for User {pl.i(uid)}({user_ordinal})...')
+                tm_ = Timer()
 
-                for i, uid in enumerate(it, start=1):
-                    if global_tqdm:
-                        d_log = dict(user=uid) | _get_dataset_sizes(dset[uid])
-                        it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
-                    else:
-                        user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
-                        logger.info(f'Launching {pl.i(dataset_name)} personalized training '
-                                    f'for User {pl.i(uid)}({user_ordinal})...')
-                    tm_ = Timer()
+                # # if any dataset split is empty, skip
+                # split_sizes = _get_dataset_sizes(dset[uid])
+                # if any(v == 0 for v in split_sizes.values()):
+                #     logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
+                #     continue
 
-                    # # if any dataset split is empty, skip
-                    # split_sizes = _get_dataset_sizes(dset[uid])
-                    # if any(v == 0 for v in split_sizes.values()):
-                    #     logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
-                    #     continue
-
-                    # reload model for each user
-                    model, tokenizer = load_model_n_tokenizer(model_name_or_path, **md_load_args)
-                    train_single(
-                        model=model, tokenizer=tokenizer, dataset=dset[uid], device=device, seed=seed,
-                        batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
-                        weight_decay=weight_decay, output_path=output_path, user_id=uid, save_per_epoch=False
-                    )
-                    t_e_ = tm_.end()
-                    if not global_tqdm:
-                        logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
-                    logger_fl.info(f'Training for User {uid} done in {t_e_}')
-            else:
-                raise NotImplementedError('Non personalized train')
+                # reload model for each user
+                model, tokenizer = load_model_n_tokenizer(model_name_or_path, **md_load_args)
+                train_single(
+                    model=model, tokenizer=tokenizer, dataset=dset[uid], seed=seed,
+                    batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate,
+                    weight_decay=weight_decay, output_path=output_path, user_id=uid, save_per_epoch=False
+                )
+                t_e_ = tm_.end()
+                if not global_tqdm:
+                    logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
+                logger_fl.info(f'Training for User {uid} done in {t_e_}')
             t_e = tm.end()
             logger.info(f'Training done in {pl.i(t_e)}')
             logger_fl.info(f'Training done in {t_e}')
         else:
             assert cmd == 'test'
             model_name_or_path = args.model
-            dataset_name, leakage, personalize = args.dataset_name, args.leakage, args.personalize
+            dataset_name, leakage = args.dataset_name, args.leakage
             bsz = args.batch_size
             zeroshot = args.zeroshot
 
@@ -509,7 +494,7 @@ if __name__ == '__main__':
 
             d_log = dict(
                 model_name_or_path=model_name_or_path, dataset_name=dataset_name, leakage=leakage,
-                personalize=personalize, batch_size=bsz, zeroshot=zeroshot
+                batch_size=bsz, zeroshot=zeroshot
             )
             logger.info(f'Testing PEFT w/ {pl.i(d_log)}...')
             fnm = os_join(eval_output_path, f'test_{now(for_path=True)}.log')
@@ -517,57 +502,55 @@ if __name__ == '__main__':
             logger_fl.info(f'Testing PEFT w/ {d_log}...')
 
             tm = Timer()
-            if personalize:
-                model, tokenizer = None, None
-                if zeroshot:  # Load global model for all users
-                    load_args = dict(verbose=True, logger_fl=logger_fl)
-                    model, tokenizer = load_model_n_tokenizer(model_name_or_path=model_name_or_path, **load_args)
-                    model.eval()
+            model, tokenizer = None, None
+            if zeroshot:  # Load global model for all users
+                load_args = dict(verbose=True, logger_fl=logger_fl)
+                model, tokenizer = load_model_n_tokenizer(model_name_or_path=model_name_or_path, **load_args)
+                model.eval()
 
-                # strt = 29044976  # unhealthyconversations
-                strt = None
-                dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage, uid_start_from=strt)
-                n_user = len(it)
-                path_ = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
-                if not os.path.exists(path_):
-                    path_ = model_name_or_path  # reset
-                model_name_or_path = path_
+            # strt = 29044976  # unhealthyconversations
+            strt = None
+            dset, it = _get_dataset_and_users_it(dataset_name=dataset_name, leakage=leakage, uid_start_from=strt)
+            n_user = len(it)
+            path_ = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
+            if not os.path.exists(path_):
+                path_ = model_name_or_path  # reset
+            model_name_or_path = path_
 
-                logger.info(f'Testing on users {pl.i(it)}... ')
-                logger_fl.info(f'Testing on users {it}... ')
+            logger.info(f'Testing on users {pl.i(it)}... ')
+            logger_fl.info(f'Testing on users {it}... ')
 
-                accs = dict()
-                for i, uid in enumerate(it, start=1):
-                    ts = ListDataset(dset[uid].test)
-                    user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
-                    desc = f'{pl.i(now(for_path=True, color=True))} Testing on User {pl.i(uid)}({user_ordinal})'
+            accs = dict()
+            for i, uid in enumerate(it, start=1):
+                ts = ListDataset(dset[uid].test)
+                user_ordinal = f'{pl.i(i)}/{pl.i(n_user)}'
+                desc = f'{pl.i(now(for_path=True, color=True))} Testing on User {pl.i(uid)}({user_ordinal})'
 
-                    user_str = f'User-{uid}'
-                    if not zeroshot:  # load trained model for each user
-                        path = os_join(model_name_or_path, user_str, 'trained')
-                        assert os.path.exists(path)  # sanity check
+                user_str = f'User-{uid}'
+                if not zeroshot:  # load trained model for each user
+                    path = os_join(model_name_or_path, user_str, 'trained')
+                    assert os.path.exists(path)  # sanity check
 
-                        model, tokenizer = load_trained(model_name_or_path=path)
-                    # if len(ts) == 0:
-                    #     logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
-                    #     continue
+                    model, tokenizer = load_trained(model_name_or_path=path)
+                # if len(ts) == 0:
+                #     logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
+                #     continue
 
-                    df, acc = test_single(
-                        model=model, tokenizer=tokenizer, dataset=ts, batch_size=bsz,
-                        dataset_name=dataset_name, tqdm_desc=desc, user_id=uid, logger_fl=logger_fl
-                    )
-                    df.to_csv(os_join(eval_output_path, f'{user_str}.csv'))
+                df, acc = test_single(
+                    model=model, tokenizer=tokenizer, dataset=ts, batch_size=bsz,
+                    dataset_name=dataset_name, tqdm_desc=desc, user_id=uid, logger_fl=logger_fl
+                )
+                df.to_csv(os_join(eval_output_path, f'{user_str}.csv'))
 
-                    accs[uid] = acc
-                    # del model
-                acc_avg = np.mean(list(accs.values()))
-                acc_avg_str = f'{acc_avg*100:.1f}'
-                logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg_str)}')
-                logger_fl.info(f'Dataset {dataset_name} macro-avg acc: {acc_avg_str}')
-                with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
-                    json.dump(accs, f, indent=4)
-            else:
-                raise NotImplementedError('Non personalized test')
+                accs[uid] = acc
+                # del model
+            acc_avg = np.mean(list(accs.values()))
+            acc_avg_str = f'{acc_avg*100:.1f}'
+            logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg_str)}')
+            logger_fl.info(f'Dataset {dataset_name} macro-avg acc: {acc_avg_str}')
+            with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
+                json.dump(accs, f, indent=4)
+
             t_e = tm.end()
             logger.info(f'Testing done in {pl.i(t_e)}')
             logger_fl.info(f'Testing done in {t_e}')
