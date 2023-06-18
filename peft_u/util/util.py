@@ -6,6 +6,7 @@ from typing import List, Union
 
 import numpy as np
 import torch
+import transformers
 
 from stefutil import *
 from peft_u.util.project_paths import BASE_PATH, PROJ_DIR, PKG_NM, DSET_DIR, MODEL_DIR
@@ -15,8 +16,12 @@ __all__ = [
     'sconfig', 'u', 'save_fig',
     'set_seed',
     'on_great_lakes', 'get_base_path',
-    'sort_user_ids'
+    'sort_user_ids',
+    'check_not_on_adapter', 'check_on_adapter'
 ]
+
+
+logger = get_logger('Util')
 
 
 sconfig = StefConfig(config_file=os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', 'config.json')).__call__
@@ -75,3 +80,19 @@ def sort_user_ids(uids: _USER_IDS) -> _USER_IDS:
                 assert match is not None
                 return int(match.group('id'))
         return sorted(uids, key=sort_fn)
+
+
+def check_not_on_adapter():
+    d_log = dict(transformers_version=transformers.__version__)
+    logger.info(pl.i(d_log))
+    if hasattr(transformers, 'adapters'):
+        raise ImportError('This script is intended for `transformers`, not the forked `adapter-transformers`')
+
+
+def check_on_adapter():
+    try:
+        d_log = dict(transformers_version=transformers.__version__, adapter_version=transformers.adapters.__version__)
+        logger.info(pl.i(d_log))
+    except AttributeError:
+        raise ImportError('This script is intended for `adapter-transformers`, '
+                          'please install `adapter-transformers` instead of `transformers`')
