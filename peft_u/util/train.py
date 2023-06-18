@@ -1,11 +1,13 @@
 import json
 import math
 from os.path import join as os_join
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Union, Callable
 from logging import Logger
 from argparse import Namespace
+from dataclasses import dataclass
 
 import numpy as np
+from transformers import T5TokenizerFast
 from transformers import Trainer, AdapterTrainer, TrainingArguments, TrainerCallback
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -16,9 +18,11 @@ import peft_u.util.models as model_util
 
 _all__ = [
     'TqdmPostfixCallback', 'MyAdapterTrainer',
-    'setup_train_output_path_n_loggers',
+    'setup_train_output_path_n_loggers', 'BatchCollator',
     'get_user_str_w_ordinal',
-    'get_user_test_pbar', 'test_user_update_postfix_n_write_df', 'log_n_save_test_results'
+    'get_user_test_pbar',
+    'PredIdPair', 'GetPredId',
+    'test_user_update_postfix_n_write_df', 'log_n_save_test_results'
 ]
 
 
@@ -98,6 +102,20 @@ def setup_train_output_path_n_loggers(args: Namespace, approach: str = None) -> 
     return output_path, logger_fl
 
 
+class BatchCollator:
+    tok_args = dict(truncation=True, padding='max_length', return_tensors='pt')
+
+    def __init__(self, tokenizer: T5TokenizerFast):
+        self.tokenizer = tokenizer
+
+    def __call__(self, texts: List[str], labels: List[str] = None):
+        ret = self.tokenizer(texts, **BatchCollator.tok_args)
+        labels = self.tokenizer(labels, **BatchCollator.tok_args)['input_ids']
+        labels[labels == self.tokenizer.pad_token_id] = -100  # `-100` is ignored in loss
+        ret['labels'] = labels
+        return ret
+
+
 def get_user_str_w_ordinal(user_id: str = None, user_idx: int = None, n_user: int = None):
     """
     Intended for terminal output
@@ -109,6 +127,64 @@ def get_user_str_w_ordinal(user_id: str = None, user_idx: int = None, n_user: in
 def get_user_test_pbar(it=None, user_id: str = None, user_idx: int = None, n_user: int = None, **kwargs):
     desc = f'{pl.i(now(for_path=True, color=True))} Testing on User {get_user_str_w_ordinal(user_id, user_idx, n_user)}'
     return tqdm(it, desc=desc, **kwargs)
+
+
+def _lenient_decoded(allowed_suffixes: List[str] = None, label_options: List[str] = None) -> Callable[[str], str]:
+    """
+    enforce an easier requirement by allowing no whitespace between labels,
+        & being lenient here by dropping trailing full stop, quotes, verb suffixes, etc.
+
+    If `label_options` is provided, and the decoded is a substring of one of the labels, that label is returned
+    """
+    def _ret(decoded: str) -> str:
+        ret = decoded.strip()
+        for suf in (allowed_suffixes or []):
+            ret = ret.removesuffix(suf)
+
+        for lb in (label_options or []):
+            if ret in lb:
+                return lb
+        return ret
+    return _ret
+
+
+@dataclass
+class PredIdPair:
+    pred: int = None
+    true: int = None
+
+
+class GetPredId:
+    def __init__(self, label_options: List[str], logger_fl: Logger = None):
+        self.label_options = label_options
+        self.lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
+        self.lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed'], label_options=label_options)
+
+        self.logger_fl = logger_fl
+
+    def __call__(self, decoded: str = None, labels: str = None, user_id: Union[str, int] = None) -> PredIdPair:
+        labels = labels.split(', ')  # See `peft_u.preprocess.load_dataset::InputExample.process_target`
+        # model may generate multiple labels
+        decoded = [self.lenient(d) for d in decoded.split(',')]
+
+        dec_not_in_lb = [dec for dec in decoded if dec not in self.label_options]
+        if len(dec_not_in_lb) > 0:
+            logger.warning(f'User {pl.i(user_id)} Predicted label(s) {pl.i(dec_not_in_lb)} not in label options')
+            if self.logger_fl:
+                self.logger_fl.warning(f'User {user_id} Predicted label(s) {dec_not_in_lb} not in label options')
+
+            decoded = [dec for dec in decoded if dec in self.label_options]
+
+            if len(decoded) == 0:  # doesn't generate anything in the label options, declare prediction wrong
+                return PredIdPair(pred=-1, true=self.lb2id[labels[0]])
+
+        # as of now, every predicted string is one of the label options
+        for dec in decoded:
+            if dec in labels:  # predicts one of the correct label, declare correct
+                pred_id = self.lb2id[dec]
+                return PredIdPair(pred=pred_id, true=pred_id)
+        # if reached here, prediction wrong, arbitrarily default to first label
+        return PredIdPair(pred=self.lb2id[decoded[0]], true=self.lb2id[labels[0]])
 
 
 def test_user_update_postfix_n_write_df(
@@ -139,3 +215,15 @@ def log_n_save_test_results(
     logger_fl.info(f'Dataset {dataset_name} macro-avg acc: {acc_avg_str}')
     with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
         json.dump(d_accs, f, indent=4)
+
+
+if __name__ == '__main__':
+    def check_lenient_dec():
+        label_options = [
+            'answer', 'answer_overans-sway', 'cant-answer-lying', 'cant-answer-sincere',
+            'shift-correct', 'shift-dodge'
+        ]
+        lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed'], label_options=label_options)
+        dec = 'answer: cant-answer-sincere'
+        mic(lenient(dec))
+    check_lenient_dec()

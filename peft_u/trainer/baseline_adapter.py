@@ -81,18 +81,9 @@ def load_dataset(
         tokenizer: T5TokenizerFast = None, tokenize: bool = True, **kwargs
 ) -> Dict[str, DatasetDict]:
     dsets = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed)
-    # mic(dsets.keys(), dsets['0'])
-    # raise NotImplementedError
-    # fnm = 'user_data_leaked'
-    # with open(os_join(u.proj_path, u.dset_dir, dataset_name, f'{fnm}.json'), 'r') as f:
-    #     data: PersonalizedDataset = json.load(f)
 
     def get_gen(user_examples: List[InputExample]):
         def gen():
-            # for sid, sample in user_data[split].items():
-            #     txt, lb = sample['text'], sample['label']
-            #     assert len(lb) == 1  # single label
-            #     yield dict(text=txt, label=lb[0])
             for eg in user_examples:
                 yield dict(text=eg.process_template(), label=eg.process_target())
         return gen
@@ -103,19 +94,10 @@ def load_dataset(
             test=Dataset.from_generator(get_gen(u_data.test))
         ) for uid, u_data in dsets.items()
     }
-    # mic(dsets['0'].keys(), dsets['0']['train'][:4])
-    # raise NotImplementedError
 
     if tokenize:
         def map_single(batch):
-            # mic(batch['text'][:4], batch['label'][:4])
-            # raise NotImplementedError
-            tok_args = dict(truncation=True, padding='max_length', return_tensors='pt')
-            ret = tokenizer(batch['text'], **tok_args)
-            labels = tokenizer(batch['label'], **tok_args)['input_ids']
-            labels[labels == tokenizer.pad_token_id] = -100  # `-100` is ignored in loss
-            ret['labels'] = labels
-            return ret
+            return train_util.BatchCollator(tokenizer)(texts=batch['text'], labels=batch['label'])
         return {uid: u_dset.map(map_single, batched=True, **kwargs) for uid, u_dset in dsets.items()}
     else:
         return dsets
@@ -217,8 +199,6 @@ def load_trained(model_name_or_path: str = None, user_id: str = None) -> T5Adapt
 
 
 if __name__ == '__main__':
-    # dataset_name, leakage = 'tweeteval', True  # TODO: developing
-
     check_on_adapter()
     reduce_hf_logging()
 
@@ -292,17 +272,15 @@ if __name__ == '__main__':
             tokenizer = get_tokenizer(model_name_or_path=HF_MODEL_NAME)
             dsets = load_dataset(dataset_name=dataset_name, leakage=leakage, seed=seed, tokenizer=tokenizer)
 
-            tm_ = Timer()
-
-            label_options = sconfig(f'datasets.{dataset_name}.labels')
-            lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
-
             it = iter_users(dataset=dsets)[:4]  # TODO: debugging
             n_user = len(it)
             logger.info(f'Testing on users {pl.i(it)}... ')
             logger_fl.info(f'Testing on users {it}... ')
 
+            label_options = sconfig(f'datasets.{dataset_name}.labels')
+            get_pred = train_util.GetPredId(label_options=label_options, logger_fl=logger_fl)
             accs = dict()
+            tm_ = Timer()
             for i, uid in enumerate(it, start=1):
                 dset = dsets[uid]['test']
 
@@ -332,11 +310,8 @@ if __name__ == '__main__':
                     lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
                     for idx, lb, dec in zip(idxs, labels, lst_decoded):
-                        if lb == dec:
-                            preds[idx] = trues[idx] = lb2id[lb]
-                        else:
-                            preds[idx] = lb2id[dec] if dec in lb2id else -1
-                            trues[idx] = lb2id[lb]
+                        out = get_pred(decoded=dec, labels=lb)
+                        preds[idx], trues[idx] = out.pred, out.true
 
                     if i_ba + 1 == n_it:  # last iteration
                         accs[uid] = train_util.test_user_update_postfix_n_write_df(
