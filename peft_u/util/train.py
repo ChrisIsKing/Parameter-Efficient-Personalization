@@ -1,8 +1,9 @@
 import json
 import math
 from os.path import join as os_join
-from typing import Dict, List
+from typing import Tuple, List, Dict
 from logging import Logger
+from argparse import Namespace
 
 import numpy as np
 from transformers import Trainer, AdapterTrainer, TrainingArguments, TrainerCallback
@@ -10,11 +11,14 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from stefutil import *
+import peft_u.util.models as model_util
 
 
 _all__ = [
     'TqdmPostfixCallback', 'MyAdapterTrainer',
-    'get_user_str_w_ordinal', 'get_user_test_pbar', 'test_user_update_postfix_n_write_df', 'log_n_save_test_results'
+    'setup_train_output_path_n_loggers',
+    'get_user_str_w_ordinal',
+    'get_user_test_pbar', 'test_user_update_postfix_n_write_df', 'log_n_save_test_results'
 ]
 
 
@@ -67,6 +71,31 @@ class MyAdapterTrainer(AdapterTrainer):
         cos the `AdapterTrainer` implementation forces using HF's AdamW
         """
         super(AdapterTrainer, self).create_optimizer()
+
+
+def setup_train_output_path_n_loggers(args: Namespace, approach: str = None) -> Tuple[str, Logger]:
+    model_name_or_path, method = args.model, args.method
+    dataset_name, leakage = args.dataset_name, args.leakage
+    batch_size, num_epochs, learning_rate = args.batch_size, args.num_epochs, args.learning_rate
+    weight_decay = args.weight_decay
+    seed = args.seed
+    output_dir = args.output_dir
+
+    get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key=approach)
+    output_path = model_util.get_train_output_path(**get_args, dataset_name=dataset_name)
+    d_log = dict(
+        model_name_or_path=model_name_or_path, method=method,
+        dataset_name=dataset_name, leakage=leakage,
+        batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate, weight_decay=weight_decay,
+        seed=seed,
+        output_dir=output_dir, output_path=output_path
+    )
+    fnm = os_join(output_path, f'train_{now(for_path=True)}.log')
+    cap_ap = approach.capitalize()
+    logger_fl = get_logger(f'{cap_ap} Train fl', kind='file-write', file_path=fnm)
+    logger.info(f'Training {pl.i(cap_ap)} w/ {pl.i(d_log)}...')
+    logger_fl.info(f'Training {cap_ap} w/ {d_log}...')
+    return output_path, logger_fl
 
 
 def get_user_str_w_ordinal(user_id: str = None, user_idx: int = None, n_user: int = None):

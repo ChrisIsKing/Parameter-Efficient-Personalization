@@ -9,11 +9,10 @@ Note: remember to remove `transformers` and keep only `adapter-transformers`
 
 import math
 import os
-import json
 from os.path import join as os_join
-from typing import Tuple
+from typing import Tuple, List, Dict
 from logging import Logger
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 
 import numpy as np
 import torch
@@ -31,12 +30,12 @@ from peft_u.util import *
 import peft_u.util.models as model_util
 import peft_u.util.train as train_util
 from peft_u.preprocess.load_dataset import *
+from peft_u.trainer import HF_MODEL_NAME, parse_train_n_test_args
 
 
 logger = get_logger('Adapter Baseline')
 
 
-HF_MODEL_NAME = 'google/flan-t5-base'
 ADAPTER_METHODS = ['Houlsby', 'IA3']
 DEFAULT_ADAPTER_METHOD = 'Houlsby'
 
@@ -56,32 +55,17 @@ def reduce_hf_logging():
     for logger_nm in logger_nms:
         logger_ = datasets.logging.get_logger(f'datasets.{logger_nm}')
         logger_.setLevel(datasets.logging.ERROR)
+    # Note downloading & preparing the generator dataset is printing, doesn't go through the logger so can't disable
 
 
 def parse_args():
     parser = ArgumentParser()
     subparsers = parser.add_subparsers(dest="mode", required=True)
-    train_parser = subparsers.add_parser("train")
-    test_parser = subparsers.add_parser("test")
-
-    train_parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
-    # train_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
-    # train_parser.add_argument("--leakage", type=bool, required=False, default=True)
+    train_parser, test_parser = parse_train_n_test_args(
+        train_parser=subparsers.add_parser('train'), test_parser=subparsers.add_parser('test')
+    )
     train_parser.add_argument(
         "--method", type=str, required=False, default=DEFAULT_ADAPTER_METHOD, choices=ADAPTER_METHODS)
-    train_parser.add_argument("--batch_size", type=int, required=False, default=8)
-    train_parser.add_argument("--num_epochs", type=int, required=False, default=8)
-    train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
-    train_parser.add_argument("--weight_decay", type=float, required=False, default=0.01)
-    train_parser.add_argument("--seed", type=int, required=False, default=42)
-    train_parser.add_argument("--output_dir", type=str, required=False, default=None)
-    # Run on `cuda` if available, always personalize
-
-    test_parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
-    # test_parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
-    # test_parser.add_argument("--leakage", type=str, required=False, default=True)
-    test_parser.add_argument("--batch_size", type=int, required=False, default=8)
-
     return parser.parse_args()
 
 
@@ -90,6 +74,90 @@ def get_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> T5TokenizerFast:
     tokenizer.model_max_length = 512
     tokenizer.deprecation_warnings['Asking-to-pad-a-fast-tokenizer'] = True  # disables warning
     return tokenizer
+
+
+def load_dataset(
+        dataset_name: str = None, leakage: bool = None, seed: int = None,
+        tokenizer: T5TokenizerFast = None, tokenize: bool = True, **kwargs
+) -> Dict[str, DatasetDict]:
+    dsets = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed)
+    # mic(dsets.keys(), dsets['0'])
+    # raise NotImplementedError
+    # fnm = 'user_data_leaked'
+    # with open(os_join(u.proj_path, u.dset_dir, dataset_name, f'{fnm}.json'), 'r') as f:
+    #     data: PersonalizedDataset = json.load(f)
+
+    def get_gen(user_examples: List[InputExample]):
+        def gen():
+            # for sid, sample in user_data[split].items():
+            #     txt, lb = sample['text'], sample['label']
+            #     assert len(lb) == 1  # single label
+            #     yield dict(text=txt, label=lb[0])
+            for eg in user_examples:
+                yield dict(text=eg.process_template(), label=eg.process_target())
+        return gen
+    dsets = {
+        uid: DatasetDict(
+            train=Dataset.from_generator(get_gen(u_data.train)),
+            validation=Dataset.from_generator(get_gen(u_data.val)),
+            test=Dataset.from_generator(get_gen(u_data.test))
+        ) for uid, u_data in dsets.items()
+    }
+    # mic(dsets['0'].keys(), dsets['0']['train'][:4])
+    # raise NotImplementedError
+
+    if tokenize:
+        def map_single(batch):
+            # mic(batch['text'][:4], batch['label'][:4])
+            # raise NotImplementedError
+            tok_args = dict(truncation=True, padding='max_length', return_tensors='pt')
+            ret = tokenizer(batch['text'], **tok_args)
+            labels = tokenizer(batch['label'], **tok_args)['input_ids']
+            labels[labels == tokenizer.pad_token_id] = -100  # `-100` is ignored in loss
+            ret['labels'] = labels
+            return ret
+        return {uid: u_dset.map(map_single, batched=True, **kwargs) for uid, u_dset in dsets.items()}
+    else:
+        return dsets
+
+
+def get_train_meta(
+        args: Namespace = None, output_path: str = None, user_id: str = None, verbose: bool = False
+) -> Tuple[TrainingArguments, Logger, str]:
+    bsz = args.batch_size
+    output_path = os_join(output_path, uid2u_str(user_id))
+    train_args = dict(
+        output_dir=output_path,
+        do_train=True,
+        do_eval=True,
+        optim=OptimizerNames.ADAMW_TORCH,
+        learning_rate=args.learning_rate,
+        lr_scheduler_type=SchedulerType.LINEAR,  # same w/ adapter baseline
+        warmup_ratio=1e-2,
+        per_device_train_batch_size=bsz,
+        per_device_eval_batch_size=bsz,
+        num_train_epochs=args.num_epochs,
+        weight_decay=args.weight_decay,
+        remove_unused_columns=False,
+        disable_tqdm=True,
+        log_level='warning',
+        logging_strategy='steps',
+        logging_steps=1,
+        evaluation_strategy='epoch',
+        save_strategy='epoch',
+        report_to='none',
+        load_best_model_at_end=True,
+        metric_for_best_model='eval_loss',
+        greater_is_better=False
+    )
+    if verbose:
+        logger.info(f'Training args: {pl.fmt(train_args)}')
+    train_args = TrainingArguments(**train_args)
+
+    fnm_ = os_join(output_path, f'train_user-{user_id}.log')
+    logger_fl = get_logger(f'Adapter user-{user_id} Train fl', kind='file-write', file_path=fnm_)
+    logger_fl.info(f'Training args: {pl.id(train_args.to_dict())}')
+    return train_args, logger_fl, output_path
 
 
 def load_t5_model_with_lm_head(
@@ -149,117 +217,25 @@ def load_trained(model_name_or_path: str = None, user_id: str = None) -> T5Adapt
 
 
 if __name__ == '__main__':
-    dataset_name = 'tweeteval'  # TODO: developing
+    # dataset_name, leakage = 'tweeteval', True  # TODO: developing
 
     check_on_adapter()
     reduce_hf_logging()
-
-    INSTR = "Please review the following text and indicate if it has the presence of hate speech. "\
-            "Respond 'Hateful' if the text contains hate speech "\
-            "and 'Non-hateful' if the text does not contain hate speech."
-
-    def load_dset(tokenizer: T5TokenizerFast, tokenize: bool = True, **kwargs):
-        fnm = 'user_data_leaked'
-        with open(os_join(u.proj_path, u.dset_dir, dataset_name, f'{fnm}.json'), 'r') as f:
-            data: PersonalizedDataset = json.load(f)
-
-        def get_gen(user_data=None, split: str = None):
-            def gen():
-                for sid, sample in user_data[split].items():
-                    txt, lb = sample['text'], sample['label']
-                    assert len(lb) == 1  # single label
-                    yield dict(text=txt, label=lb[0])
-            return gen
-        dsets = {
-            uid: DatasetDict(
-                train=Dataset.from_generator(get_gen(u_data, 'train')),
-                validation=Dataset.from_generator(get_gen(u_data, 'val')),
-                test=Dataset.from_generator(get_gen(u_data, 'test'))
-            ) for uid, u_data in data.items()
-        }
-
-        if tokenize:
-            def map_text(txt: str):
-                return f'{INSTR} Text: {txt} Label: '
-
-            def map_single(batch):
-                inputs = [map_text(txt) for txt in batch['text']]
-                labels = batch['label']
-                tok_args = dict(
-                    truncation=True, padding='max_length',
-                    return_tensors='pt'
-                )
-                ret = tokenizer(inputs, **tok_args)
-                labels = tokenizer(labels, **tok_args)['input_ids']
-                labels[labels == tokenizer.pad_token_id] = -100  # `-100` is ignored in loss
-                ret['labels'] = labels
-                return ret
-            return {uid: u_dset.map(map_single, batched=True, **kwargs) for uid, u_dset in dsets.items()}
-        else:
-            return dsets
 
     def command_prompt():
         args = parse_args()
         cmd = args.mode
         if cmd == 'train':
             model_name_or_path, method = args.model, args.method
-            # dataset_name, leakage = args.dataset_name, args.leakage
-            batch_size, num_epochs, learning_rate = args.batch_size, args.num_epochs, args.learning_rate
-            weight_decay = args.weight_decay
+            dataset_name, leakage = args.dataset_name, args.leakage
             seed = args.seed
-            output_dir = args.output_dir
-
-            get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key='adapter')
-            output_path = model_util.get_train_output_path(**get_args, dataset_name=dataset_name)
-            d_log = dict(
-                model_name_or_path=model_name_or_path, method=method,
-                # dataset_name=dataset_name, leakage=leakage,
-                batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate, weight_decay=weight_decay,
-                seed=seed,
-                output_dir=output_dir, output_path=output_path
-            )
-            fnm = os_join(output_path, f'train_{now(for_path=True)}.log')
-            logger_fl = get_logger('Adapter Train fl', kind='file-write', file_path=fnm)
-            logger.info(f'Training Adapter w/ {pl.i(d_log)}...')
-            logger_fl.info(f'Training Adapter w/ {d_log}...')
+            output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='adapter')
 
             tokenizer = get_tokenizer(model_name_or_path=model_name_or_path)
-            dsets = load_dset(tokenizer=tokenizer, remove_columns=['text', 'label'])
-
-            def get_train_meta(user_id: str = None, verbose: bool = False) -> Tuple[TrainingArguments, Logger, str]:
-                output_path_ = os_join(output_path, uid2u_str(user_id))
-                train_args = dict(
-                    output_dir=output_path_,
-                    do_train=True,
-                    do_eval=True,
-                    optim=OptimizerNames.ADAMW_TORCH,
-                    learning_rate=learning_rate,
-                    lr_scheduler_type=SchedulerType.LINEAR,  # same w/ adapter baseline
-                    warmup_ratio=1e-2,
-                    per_device_train_batch_size=batch_size,
-                    per_device_eval_batch_size=batch_size,
-                    num_train_epochs=num_epochs,
-                    weight_decay=weight_decay,
-                    remove_unused_columns=False,
-                    disable_tqdm=True,
-                    log_level='warning',
-                    logging_strategy='steps',
-                    logging_steps=1,
-                    evaluation_strategy='epoch',
-                    save_strategy='epoch',
-                    report_to='none',
-                    load_best_model_at_end=True,
-                    metric_for_best_model='eval_loss',
-                    greater_is_better=False
-                )
-                if verbose:
-                    logger.info(f'Training args: {pl.fmt(train_args)}')
-                train_args = TrainingArguments(**train_args)
-
-                fnm_ = os_join(output_path_, f'train_user-{user_id}.log')
-                logger_fl_ = get_logger(f'Adapter user-{user_id} Train fl', kind='file-write', file_path=fnm_)
-                logger_fl_.info(f'Training args: {pl.id(train_args.to_dict())}')
-                return train_args, logger_fl_, output_path_
+            dsets = load_dataset(
+                dataset_name=dataset_name, leakage=leakage, seed=seed,
+                tokenizer=tokenizer, remove_columns=['text', 'label']
+            )
 
             tm = Timer()
             it = iter_users(dataset=dsets)[:4]  # TODO: debugging
@@ -272,9 +248,9 @@ if __name__ == '__main__':
                 model = load_adapter_model(
                     model_name_or_path=model_name_or_path, adapter_method=method, user_id=uid, logger_fl=logger_fl
                 )
-                args, logger_fl__, output_path__ = get_train_meta(user_id=uid)
+                train_args, logger_fl_, output_path_ = get_train_meta(args=args, output_path=output_path, user_id=uid)
                 trainer = train_util.MyAdapterTrainer(
-                    logger_fl=logger_fl__, model=model, args=args, tokenizer=tokenizer,
+                    logger_fl=logger_fl_, model=model, args=train_args, tokenizer=tokenizer,
                     train_dataset=dset['train'], eval_dataset=dset['validation']
                 )
 
@@ -287,15 +263,16 @@ if __name__ == '__main__':
                 t_e_ = tm_.end()
                 logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
                 logger_fl.info(f'Training for User {uid} done in {t_e_}')
-                model.save_adapter(save_directory=os_join(output_path__, 'trained'), adapter_name=uid)
+                model.save_adapter(save_directory=os_join(output_path_, 'trained'), adapter_name=uid)
             t_e = tm.end()
             logger.info(f'Training done in {pl.i(t_e)}')
             logger_fl.info(f'Training done in {t_e}')
         else:
             assert cmd == 'test'
             model_name_or_path = args.model
-            # dataset_name, leakage = args.dataset_name, args.leakage
+            dataset_name, leakage = args.dataset_name, args.leakage
             bsz = args.batch_size
+            seed = args.seed
 
             date = now(fmt='short-date')
             eval_output_path = os_join(u.proj_path, 'eval', f'{model_name_or_path}_Eval-{date}')
@@ -303,7 +280,7 @@ if __name__ == '__main__':
 
             d_log = dict(
                 model_name_or_path=model_name_or_path,
-                # dataset_name=dataset_name, leakage=leakage,
+                dataset_name=dataset_name, leakage=leakage,
                 batch_size=bsz
             )
             logger.info(f'Testing Adapter w/ {pl.i(d_log)}...')
@@ -313,7 +290,7 @@ if __name__ == '__main__':
 
             model_name_or_path = model_util.prepend_local_model_path(model_path=model_name_or_path)
             tokenizer = get_tokenizer(model_name_or_path=HF_MODEL_NAME)
-            dsets = load_dset(tokenizer=tokenizer)
+            dsets = load_dataset(dataset_name=dataset_name, leakage=leakage, seed=seed, tokenizer=tokenizer)
 
             tm_ = Timer()
 

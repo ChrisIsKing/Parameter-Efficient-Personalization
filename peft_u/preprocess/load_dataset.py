@@ -13,7 +13,7 @@ from peft_u.util import *
 
 __all__ = [
     'PersonalizedData', 'PersonalizedDataset',
-    'InputEgDataset', 'ListDataset',
+    'InputExample', 'InputEgDataset', 'ListDataset',
     'load_dataset_with_prompts', 'sort_user_ids', 'iter_users'
 ]
 
@@ -37,18 +37,16 @@ class InputExample:
         assert isinstance(label, list) and all(isinstance(l, str) for l in label)
         self.label = label
 
-    def process_template(self):
+    def process_template(self) -> str:
         prompt = f"{self.instruction} "
-        # TODO: separator between examples?
         for example in self.prompt_examples:
-            txt, lb = example  # TODO: consider multiple examples?
+            txt, lb = example
             prompt += f"Text: {txt} Label: {lb}. "
 
         prompt += f"Text: {self.text} Label: "
-
         return prompt
 
-    def process_target(self):
+    def process_target(self) -> str:
         if len(self.label) == 1:
             return self.label[0]
         return ', '.join(self.label)
