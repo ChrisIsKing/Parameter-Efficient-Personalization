@@ -1,6 +1,6 @@
 import os
 from os.path import join as os_join
-from typing import Tuple, List, Dict, Union, Callable
+from typing import Tuple, List, Dict, Union
 from logging import Logger
 from argparse import ArgumentParser
 from functools import partial
@@ -106,14 +106,10 @@ def smart_batching_collate(batch, tokenizer):
     """
     Collate function for PyTorch DataLoader
     """
-    inputs = [example.process_template() for example in batch]
-    targets = [example.process_target() for example in batch]
-    batch_encoding = tokenizer(inputs, truncation=True, padding='max_length', return_tensors='pt')
-    labels = tokenizer(targets, truncation=True, padding='max_length', return_tensors='pt')
-    labels = labels['input_ids']
-    labels[labels == tokenizer.pad_token_id] = -100
-    batch_encoding['labels'] = labels
-    return batch_encoding
+    return train_util.BatchCollator(tokenizer)(
+        texts=[example.process_template() for example in batch],
+        labels=[example.process_target() for example in batch]
+    )
 
 
 def _get_dataset_sizes(dataset: InputEgDataset):
@@ -182,12 +178,8 @@ def train_single(
             lr_scheduler.step()
             optimizer.zero_grad()
 
-            d_log = dict(
-                epoch=epoch,
-                step=(epoch-1) * n_step_per_epoch + step,
-                lr=optimizer.param_groups[0]['lr'],
-                loss=loss_item,
-            )
+            glob_step, lr = (epoch-1) * n_step_per_epoch + step, optimizer.param_groups[0]['lr']
+            d_log = dict(epoch=epoch, step=glob_step, lr=lr, loss=loss_item)
             ls.pbar = it
             ls(d_log, training=True, to_console=False)
 
@@ -265,32 +257,12 @@ def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple
     return model, tokenizer
 
 
-def _lenient_decoded(allowed_suffixes: List[str] = None, label_options: List[str] = None) -> Callable[[str], str]:
-    """
-    enforce an easier requirement by allowing no whitespace between labels,
-        & being lenient here by dropping trailing full stop, quotes, verb suffixes, etc.
-
-    If `label_options` is provided, and the decoded is a substring of one of the labels, that label is returned
-    """
-    def _ret(decoded: str) -> str:
-        ret = decoded.strip()
-        for suf in (allowed_suffixes or []):
-            ret = ret.removesuffix(suf)
-
-        for lb in (label_options or []):
-            if ret in lb:
-                return lb
-        return ret
-    return _ret
-
-
 def test_single(
         model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: ListDataset = None, dataset_name: str = None,
         batch_size: int = 8, user_id: str = None, user_idx: int = None, n_user: int = None,
         logger_fl: Logger = None, eval_output_path: str = None
 ) -> float:
     label_options = sconfig(f'datasets.{dataset_name}.labels')
-    lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
     n_sample = len(dataset)
 
     collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
@@ -304,8 +276,7 @@ def test_single(
 
     ret = None
     n_ba = len(ts_dl)
-    lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed'], label_options=label_options)
-
+    get_pred = train_util.GetPredId(label_options=label_options, logger_fl=logger_fl)
     for i_ba, inputs in enumerate(it):
         inputs = {k: v for k, v in inputs.items()}
         inputs.pop('labels')
@@ -317,33 +288,8 @@ def test_single(
 
         for i, decoded in enumerate(lst_decoded):
             i_sample = i_ba * batch_size + i
-            labels = dataset[i_sample].process_target()
-            labels = labels.split(', ')  # See `peft_u.preprocess.load_dataset::InputExample.process_target`
-            # model may generate multiple labels
-            decoded = [lenient(d) for d in decoded.split(',')]
-
-            dec_not_in_lb = [dec for dec in decoded if dec not in label_options]
-            if len(dec_not_in_lb) > 0:
-                logger.warning(f'User {pl.i(user_id)} Predicted label(s) {pl.i(dec_not_in_lb)} not in label options')
-                if logger_fl:
-                    logger_fl.warning(f'User {user_id} Predicted label(s) {dec_not_in_lb} not in label options')
-
-                decoded = [dec for dec in decoded if dec in label_options]
-
-                if len(decoded) == 0:  # doesn't generate anything in the label options, declare prediction wrong
-                    trues[i_sample] = lb2id[labels[0]]
-                    preds[i_sample] = -1
-                    continue
-
-            correct = False
-            for dec in decoded:
-                if dec in labels:  # predicts one of the correct label, declare correct; TODO: discuss
-                    preds[i_sample] = trues[i_sample] = lb2id[dec]
-                    correct = True
-                    break
-            if not correct:  # if prediction wrong, default to first label arbitrarily
-                trues[i_sample] = lb2id[labels[0]]
-                preds[i_sample] = lb2id[decoded[0]]
+            out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target())
+            preds[i_sample], trues[i_sample] = out.pred, out.true
 
         if i_ba + 1 == n_ba:  # last iteration
             ret = train_util.test_user_update_postfix_n_write_df(
@@ -520,13 +466,3 @@ if __name__ == '__main__':
         lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
         mic(lst_decoded)
     # try_generate()
-
-    def check_lenient_dec():
-        label_options = [
-            'answer', 'answer_overans-sway', 'cant-answer-lying', 'cant-answer-sincere',
-            'shift-correct', 'shift-dodge'
-        ]
-        lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed'], label_options=label_options)
-        dec = 'answer: cant-answer-sincere'
-        mic(lenient(dec))
-    # check_lenient_dec()
