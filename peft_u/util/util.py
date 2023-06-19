@@ -16,7 +16,7 @@ __all__ = [
     'set_seed',
     'on_great_lakes', 'get_base_path',
     'uid2u_str',
-    'check_not_on_adapter', 'check_on_adapter'
+    'is_on_adapter', 'check_not_on_adapter', 'check_on_adapter'
 ]
 
 
@@ -62,6 +62,10 @@ def get_base_path():
 
 def uid2u_str(uid: Union[str, int]) -> str:
     return f'User-{uid}'
+
+
+def is_on_adapter():
+    return hasattr(transformers, 'adapters')
 
 
 def check_not_on_adapter():

@@ -8,22 +8,29 @@ from dataclasses import dataclass
 
 import numpy as np
 from transformers import T5TokenizerFast
-from transformers import Trainer, AdapterTrainer, TrainingArguments, TrainerCallback
+from transformers import Trainer, TrainingArguments, TrainerCallback
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from stefutil import *
+from peft_u.util.util import *
 import peft_u.util.models as model_util
 
 
-_all__ = [
-    'TqdmPostfixCallback', 'MyAdapterTrainer',
+if is_on_adapter():
+    from transformers import AdapterTrainer
+
+
+__all__ = [
+    'TqdmPostfixCallback',
     'setup_train_output_path_n_loggers', 'BatchCollator',
     'get_user_str_w_ordinal',
     'get_user_test_pbar',
     'PredIdPair', 'GetPredId',
     'test_user_update_postfix_n_write_df', 'log_n_save_test_results'
 ]
+if is_on_adapter():
+    __all__ += ['MyAdapterTrainer']
 
 
 logger = get_logger('Train Util')
@@ -56,25 +63,26 @@ class TqdmPostfixCallback(TrainerCallback):
             logger.info(pl.i(logs))
 
 
-class MyAdapterTrainer(AdapterTrainer):
-    def __init__(self, logger_fl: Logger = None, **kwargs):
-        super(MyAdapterTrainer, self).__init__(**kwargs)
+if is_on_adapter():
+    class MyAdapterTrainer(AdapterTrainer):
+        def __init__(self, logger_fl: Logger = None, **kwargs):
+            super(MyAdapterTrainer, self).__init__(**kwargs)
 
-        callbacks = self.callback_handler.callbacks
-        self.callback_handler.callbacks = [  # Remove internal callback
-            c for c in callbacks if str(c.__class__) != "<class 'transformers.trainer_callback.PrinterCallback'>"
-        ]
+            callbacks = self.callback_handler.callbacks
+            self.callback_handler.callbacks = [  # Remove internal callback
+                c for c in callbacks if str(c.__class__) != "<class 'transformers.trainer_callback.PrinterCallback'>"
+            ]
 
-        self.add_callback(MyProgressCallback())
+            self.add_callback(MyProgressCallback())
 
-        self.add_callback(TqdmPostfixCallback(trainer=self, logger_fl=logger_fl))
+            self.add_callback(TqdmPostfixCallback(trainer=self, logger_fl=logger_fl))
 
-    def create_optimizer(self):
-        """
-        Use the implementation from original HuggingFace Trainer class
-        cos the `AdapterTrainer` implementation forces using HF's AdamW
-        """
-        super(AdapterTrainer, self).create_optimizer()
+        def create_optimizer(self):
+            """
+            Use the implementation from original HuggingFace Trainer class
+            cos the `AdapterTrainer` implementation forces using HF's AdamW
+            """
+            super(AdapterTrainer, self).create_optimizer()
 
 
 def setup_train_output_path_n_loggers(args: Namespace, approach: str = None) -> Tuple[str, Logger]:
