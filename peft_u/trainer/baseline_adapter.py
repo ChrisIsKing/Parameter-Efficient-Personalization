@@ -198,6 +198,11 @@ def load_trained(model_name_or_path: str = None, user_id: str = None) -> T5Adapt
     return model
 
 
+def cuda_free_mem() -> Dict:
+    free, total = torch.cuda.mem_get_info(device='cuda:0')
+    return dict(free=fmt_sizeof(free), total=fmt_sizeof(total), ratio=round(free / total * 100, 2))
+
+
 if __name__ == '__main__':
     check_on_adapter()
     reduce_hf_logging()
@@ -218,7 +223,8 @@ if __name__ == '__main__':
             )
 
             tm = Timer()
-            it = iter_users(dataset=dsets)[:4]  # TODO: debugging
+            it = iter_users(dataset=dsets)
+            # it = it[:4]  # TODO: debugging
             n_user = len(it)
             logger.info(f'Training on users {pl.i(it)}... ')
             logger_fl.info(f'Training on users {it}... ')
@@ -244,6 +250,10 @@ if __name__ == '__main__':
                 logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
                 logger_fl.info(f'Training for User {uid} done in {t_e_}')
                 model.save_adapter(save_directory=os_join(output_path_, 'trained'), adapter_name=uid)
+
+                # mic(cuda_free_mem())
+                torch.cuda.empty_cache()
+                # mic(cuda_free_mem())
             t_e = tm.end()
             logger.info(f'Training done in {pl.i(t_e)}')
             logger_fl.info(f'Training done in {t_e}')
@@ -272,7 +282,8 @@ if __name__ == '__main__':
             tokenizer = get_tokenizer(model_name_or_path=HF_MODEL_NAME)
             dsets = load_dataset(dataset_name=dataset_name, leakage=leakage, seed=seed, tokenizer=tokenizer)
 
-            it = iter_users(dataset=dsets)[:4]  # TODO: debugging
+            it = iter_users(dataset=dsets)
+            # it = it[:4]  # TODO: debugging
             n_user = len(it)
             logger.info(f'Testing on users {pl.i(it)}... ')
             logger_fl.info(f'Testing on users {it}... ')

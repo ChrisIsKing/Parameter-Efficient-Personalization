@@ -333,9 +333,9 @@ if __name__ == '__main__':
             # strt = 5021  # `measuringhatespeech.lora`
             # strt = 3896  # `measuringhatespeech.prefix`
             # strt = 3342  # `measuringhatespeech.p_tuning`
-            strt = 1161  # `measuringhatespeech.prompt_tuning`
+            # strt = 1161  # `measuringhatespeech.prompt_tuning`
             # strt = 1714   # `cockamamie`
-            # strt = 1682  # `wikidetox`
+            strt = 3669  # `wikidetox`
             # strt = '45214884'  # `unhealthyconversations`
             # strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
@@ -368,7 +368,9 @@ if __name__ == '__main__':
                 #     continue
 
                 # reload model for each user
+                # mic('before loading model')
                 model, tokenizer = load_model_n_tokenizer(model_name_or_path, **md_load_args)
+                # mic('model loaded')
                 train_single(
                     model=model, tokenizer=tokenizer, dataset=dset[uid], seed=seed,
                     batch_size=args.batch_size, num_epochs=args.num_epochs, learning_rate=args.learning_rate,
