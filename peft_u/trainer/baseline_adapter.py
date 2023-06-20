@@ -242,6 +242,9 @@ if __name__ == '__main__':
 
                 user_str_ordinal = train_util.get_user_str_w_ordinal(user_id=uid, user_idx=i, n_user=n_user)
                 logger.info(f'Launching {pl.i(dataset_name)} personalized training for User {user_str_ordinal}...')
+                d_log = dict(train_sz=len(dset['train']), val_sz=len(dset['validation']), test_sz=len(dset['test']))
+                logger.info(f'Dataset sizes: {pl.i(d_log)}')
+                logger_fl.info(f'Dataset sizes: {d_log}')
 
                 transformers.set_seed(seed)
                 tm_ = Timer()
@@ -321,7 +324,7 @@ if __name__ == '__main__':
                     lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
                     for idx, lb, dec in zip(idxs, labels, lst_decoded):
-                        out = get_pred(decoded=dec, labels=lb)
+                        out = get_pred(decoded=dec, labels=lb, user_id=uid)
                         preds[idx], trues[idx] = out.pred, out.true
 
                     if i_ba + 1 == n_it:  # last iteration
