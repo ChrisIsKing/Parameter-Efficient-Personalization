@@ -21,9 +21,9 @@ def map_output_dir_nm(
         model_name: str = None, name: str = None, method: str = None, dataset_name: str = None,
         method_key: str = None
 ) -> str:
-    model_name = hf_model_name_drop_org(model_name)
-    d = dict(md_nm=model_name, ds=dataset_name)
+    d = dict()
     d[method_key or 'method'] = method
+    d |= dict(md_nm=hf_model_name_drop_org(model_name), ds=dataset_name)
     date = now(fmt='short-date')
     ret = f'{date}_{pl.pa(d)}'
     if name:

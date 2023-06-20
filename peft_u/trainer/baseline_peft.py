@@ -288,7 +288,7 @@ def test_single(
 
         for i, decoded in enumerate(lst_decoded):
             i_sample = i_ba * batch_size + i
-            out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target())
+            out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target(), user_id=user_id)
             preds[i_sample], trues[i_sample] = out.pred, out.true
 
         if i_ba + 1 == n_ba:  # last iteration
@@ -335,9 +335,9 @@ if __name__ == '__main__':
             # strt = 3342  # `measuringhatespeech.p_tuning`
             # strt = 1161  # `measuringhatespeech.prompt_tuning`
             # strt = 1714   # `cockamamie`
-            strt = 3669  # `wikidetox`
+            # strt = 3669  # `wikidetox`
             # strt = '45214884'  # `unhealthyconversations`
-            # strt = None
+            strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
             md_load_args = dict(peft_method=method, logger_fl=logger_fl)
@@ -443,6 +443,7 @@ if __name__ == '__main__':
                     user_id=uid, user_idx=i, n_user=n_user, logger_fl=logger_fl, eval_output_path=eval_output_path
                 )
                 # del model
+                torch.cuda.empty_cache()
             out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path)
             train_util.log_n_save_test_results(dataset_name=dataset_name, **out_args)
 
