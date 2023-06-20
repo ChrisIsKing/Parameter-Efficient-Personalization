@@ -277,6 +277,8 @@ def test_single(
     ret = None
     n_ba = len(ts_dl)
     get_pred = train_util.GetPredId(label_options=label_options, logger_fl=logger_fl)
+
+    # return ret
     for i_ba, inputs in enumerate(it):
         inputs = {k: v for k, v in inputs.items()}
         inputs.pop('labels')
@@ -296,6 +298,9 @@ def test_single(
                 label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
                 df_out_path=os_join(eval_output_path, uid2u_str(user_id))
             )
+
+        # del model, inputs
+        # torch.cuda.empty_cache()
     return ret
 
 
@@ -415,24 +420,27 @@ if __name__ == '__main__':
                 load_args = dict(verbose=True, logger_fl=logger_fl)
                 model, tokenizer = load_model_n_tokenizer(model_name_or_path=model_name_or_path, **load_args)
                 model.eval()
-            model_name_or_path = model_util.prepend_local_model_path(model_path=model_name_or_path)
+            else:
+                model_name_or_path = model_util.prepend_local_model_path(model_path=model_name_or_path)
 
             # strt = 29044976  # unhealthyconversations
             strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
             n_user = len(it)
-            logger.info(f'Testing on users {pl.i(it)}... ')
-            logger_fl.info(f'Testing on users {it}... ')
+            d_log = dict(users=it, label_options=sconfig(f'datasets.{dataset_name}.labels'))
+            logger.info(f'Testing w/ {pl.i(d_log)}...')
+            logger_fl.info(f'Testing w/ {d_log}...')
 
+            import gc
             accs = dict()
             for i, uid in enumerate(it, start=1):
+                torch.cuda.empty_cache()
                 ts = ListDataset(dset[uid].test)
 
                 if not zeroshot:  # load trained model for each user
                     path = os_join(model_name_or_path, uid2u_str(uid), 'trained')
                     assert os.path.exists(path)  # sanity check
-
                     model, tokenizer = load_trained(model_name_or_path=path)
                 # if len(ts) == 0:
                 #     logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
@@ -442,8 +450,13 @@ if __name__ == '__main__':
                     model=model, tokenizer=tokenizer, dataset=ts, batch_size=bsz, dataset_name=dataset_name,
                     user_id=uid, user_idx=i, n_user=n_user, logger_fl=logger_fl, eval_output_path=eval_output_path
                 )
+                model.cpu()  # move to CPU then collect memory, otherwise CUDA OOM error
                 # del model
-                torch.cuda.empty_cache()
+                gc.collect()
+                # del model
+                # mic('before empty', model_util.get_cuda_free_mem())
+                # torch.cuda.empty_cache()
+                # mic('after empty', model_util.get_cuda_free_mem())
             out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path)
             train_util.log_n_save_test_results(dataset_name=dataset_name, **out_args)
 

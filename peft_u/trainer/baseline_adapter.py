@@ -198,11 +198,6 @@ def load_trained(model_name_or_path: str = None, user_id: str = None) -> T5Adapt
     return model
 
 
-def cuda_free_mem() -> Dict:
-    free, total = torch.cuda.mem_get_info(device='cuda:0')
-    return dict(free=fmt_sizeof(free), total=fmt_sizeof(total), ratio=round(free / total * 100, 2))
-
-
 if __name__ == '__main__':
     check_on_adapter()
     reduce_hf_logging()
@@ -288,10 +283,12 @@ if __name__ == '__main__':
             it = iter_users(dataset=dsets)
             # it = it[:4]  # TODO: debugging
             n_user = len(it)
-            logger.info(f'Testing on users {pl.i(it)}... ')
-            logger_fl.info(f'Testing on users {it}... ')
 
             label_options = sconfig(f'datasets.{dataset_name}.labels')
+            d_log = dict(users=it, label_options=label_options)
+            logger.info(f'Testing w/ {pl.i(d_log)}...')
+            logger_fl.info(f'Testing w/ {d_log}...')
+
             get_pred = train_util.GetPredId(label_options=label_options, logger_fl=logger_fl)
             accs = dict()
             tm_ = Timer()
