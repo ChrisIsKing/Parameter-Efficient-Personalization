@@ -1,5 +1,8 @@
 import os
 from os.path import join as os_join
+from typing import Dict
+
+import torch
 
 from stefutil import *
 from peft_u.util.util import *
@@ -7,7 +10,8 @@ from peft_u.util.util import *
 
 __all__ = [
     'hf_model_name_drop_org', 'get_train_output_path', 'prepend_local_model_path',
-    'hf_custom_model_cache_dir', 'get_hf_cache_dir'
+    'hf_custom_model_cache_dir', 'get_hf_cache_dir',
+    'get_cuda_free_mem'
 ]
 
 
@@ -56,3 +60,10 @@ def get_hf_cache_dir():
     if on_great_lakes():  # download to scratch folder if on GL to save space
         ret = hf_custom_model_cache_dir()
     return ret
+
+
+def get_cuda_free_mem() -> Dict:
+    free, total = torch.cuda.mem_get_info(device='cuda:0')
+    ratio = free / total * 100
+    ratio_str = f'{ratio:.2f}%'
+    return dict(free_sz=fmt_sizeof(free), total_sz=fmt_sizeof(total), free_ratio=ratio_str)
