@@ -277,8 +277,6 @@ def test_single(
     ret = None
     n_ba = len(ts_dl)
     get_pred = train_util.GetPredId(label_options=label_options, logger_fl=logger_fl)
-
-    # return ret
     for i_ba, inputs in enumerate(it):
         inputs = {k: v for k, v in inputs.items()}
         inputs.pop('labels')
@@ -298,9 +296,6 @@ def test_single(
                 label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
                 df_out_path=os_join(eval_output_path, uid2u_str(user_id))
             )
-
-        # del model, inputs
-        # torch.cuda.empty_cache()
     return ret
 
 
@@ -372,10 +367,7 @@ if __name__ == '__main__':
                 #     logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
                 #     continue
 
-                # reload model for each user
-                # mic('before loading model')
                 model, tokenizer = load_model_n_tokenizer(model_name_or_path, **md_load_args)
-                # mic('model loaded')
                 train_single(
                     model=model, tokenizer=tokenizer, dataset=dset[uid], seed=seed,
                     batch_size=args.batch_size, num_epochs=args.num_epochs, learning_rate=args.learning_rate,
@@ -451,12 +443,7 @@ if __name__ == '__main__':
                     user_id=uid, user_idx=i, n_user=n_user, logger_fl=logger_fl, eval_output_path=eval_output_path
                 )
                 model.cpu()  # move to CPU then collect memory, otherwise CUDA OOM error
-                # del model
                 gc.collect()
-                # del model
-                # mic('before empty', model_util.get_cuda_free_mem())
-                # torch.cuda.empty_cache()
-                # mic('after empty', model_util.get_cuda_free_mem())
             out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path)
             train_util.log_n_save_test_results(dataset_name=dataset_name, **out_args)
 
