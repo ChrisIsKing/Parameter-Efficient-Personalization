@@ -133,7 +133,9 @@ def get_user_str_w_ordinal(user_id: str = None, user_idx: int = None, n_user: in
 
 
 def get_user_test_pbar(it=None, user_id: str = None, user_idx: int = None, n_user: int = None, **kwargs):
-    desc = f'{pl.i(now(for_path=True, color=True))}|Testing on User {get_user_str_w_ordinal(user_id, user_idx, n_user)}'
+    user_str = get_user_str_w_ordinal(user_id, user_idx, n_user)
+    sep = pl.i('|')
+    desc = f'{pl.i(now(for_path=True, color=True))}{sep}Testing on User {user_str}'
     return tqdm(it, desc=desc, **kwargs)
 
 
