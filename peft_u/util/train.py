@@ -21,8 +21,10 @@ if is_on_adapter():
     from transformers import AdapterTrainer
 else:
     import warnings
+
+    import torch
     from peft import PromptLearningConfig, PeftModelForSeq2SeqLM
-    from peft import TaskType, MODEL_TYPE_TO_PEFT_MODEL_MAPPING
+    from peft import PeftType, TaskType, MODEL_TYPE_TO_PEFT_MODEL_MAPPING
 
 
 __all__ = [
@@ -118,13 +120,43 @@ else:
                         )
                         kwargs["token_type_ids"] = None
 
-                    # ========================== Begin of modified ==========================
-                    # if peft_config.peft_type == PeftType.PREFIX_TUNING:
-                    #     outputs = self.base_model.generate(**kwargs)
-                    # else:
-                    #     raise NotImplementedError
-                    outputs = self.base_model.generate(**kwargs)
-                    # ========================== End of modified ==========================
+                    if peft_config.peft_type == PeftType.PREFIX_TUNING:
+                        outputs = self.base_model.generate(**kwargs)
+                    else:
+                        # ========================== Begin of modified ==========================
+                        # raise NotImplementedError
+                        batch_size = kwargs["input_ids"].shape[0]
+                        if kwargs.get("attention_mask", None) is not None:
+                            # concat prompt attention mask
+                            prefix_attention_mask = torch.ones(
+                                batch_size, peft_config.num_virtual_tokens).to(kwargs["input_ids"].device)
+                            kwargs["attention_mask"] = torch.cat(
+                                (prefix_attention_mask, kwargs["attention_mask"]), dim=1).to(self.device)
+                        prompts = self.get_prompt(batch_size=batch_size)
+
+                        assert peft_config.num_transformer_submodules == 2
+                        if kwargs.get("inputs_embeds", None) is None:
+                            inputs_embeds = self.word_embeddings(kwargs["input_ids"].to(self.device))
+                            prompts = prompts.to(inputs_embeds.dtype)
+                            kwargs["inputs_embeds"] = torch.cat(
+                                (prompts[:, :peft_config.num_virtual_tokens], inputs_embeds), dim=1)
+                            kwargs["input_ids"] = None
+
+                        if kwargs.get("decoder_inputs_embeds", None) is None \
+                                and kwargs.get("decoder_input_ids", None) is None:
+                            decoder_input_ids_start = torch.ones((batch_size, 1), dtype=torch.long, device=self.device)
+                            decoder_input_ids_start *= self.config.decoder_start_token_id
+                            decoder_inputs_embeds = self.word_embeddings(decoder_input_ids_start)
+                            decoder_inputs_embeds = torch.cat(
+                                (prompts[:, peft_config.num_virtual_tokens:], decoder_inputs_embeds), dim=1)
+                            kwargs["decoder_inputs_embeds"] = decoder_inputs_embeds
+                            kwargs["decoder_input_ids"] = None
+                        # mic('in my peft generate')
+                        # for k, v in kwargs.items():
+                        #     if v is not None and k != 'max_new_tokens':
+                        #         mic(k, v.shape, v.device)
+                        outputs = self.base_model.generate(**kwargs)
+                        # ========================== End of modified ==========================
             except:
                 self.base_model.prepare_inputs_for_generation = self.base_model_prepare_inputs_for_generation
                 self.base_model._prepare_encoder_decoder_kwargs_for_generation = (
