@@ -221,7 +221,7 @@ if __name__ == '__main__':
 
             tm = Timer()
             # strt = '72'  # `hatexplain`
-            strt = 377  # `cockamamie`
+            strt = 27  # `cockamamie`
             # strt = None
             it = iter_users(dataset=dsets, start_from=strt)
             n_user = len(it)

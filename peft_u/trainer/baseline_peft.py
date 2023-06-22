@@ -325,10 +325,10 @@ if __name__ == '__main__':
             # strt = 3896  # `measuringhatespeech.prefix`
             # strt = 3342  # `measuringhatespeech.p_tuning`
             # strt = 1161  # `measuringhatespeech.prompt_tuning`
-            strt = 377   # `cockamamie`
+            # strt = 377   # `cockamamie`
             # strt = 3669  # `wikidetox`
             # strt = '45214884'  # `unhealthyconversations`
-            # strt = None
+            strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
             md_load_args = dict(peft_method=method, logger_fl=logger_fl)
@@ -441,7 +441,7 @@ if __name__ == '__main__':
             t_e = tm.end()
             logger.info(f'Testing done in {pl.i(t_e)}')
             logger_fl.info(f'Testing done in {t_e}')
-    command_prompt()
+    # command_prompt()
 
     def try_generate():
         md_nm = HF_MODEL_NAME
@@ -463,4 +463,4 @@ if __name__ == '__main__':
             outputs = model.generate(**inputs, max_new_tokens=32)  # Greedy decoding
         lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
         mic(lst_decoded)
-    # try_generate()
+    try_generate()
