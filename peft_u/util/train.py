@@ -19,6 +19,10 @@ import peft_u.util.models as model_util
 
 if is_on_adapter():
     from transformers import AdapterTrainer
+else:
+    import warnings
+    from peft import PromptLearningConfig, PeftModelForSeq2SeqLM
+    from peft import TaskType, MODEL_TYPE_TO_PEFT_MODEL_MAPPING
 
 
 __all__ = [
@@ -31,6 +35,8 @@ __all__ = [
 ]
 if is_on_adapter():
     __all__ += ['MyAdapterTrainer']
+else:
+    __all__ += ['MyPeftModelForSeq2SeqLM']
 
 
 logger = get_logger('Train Util')
@@ -83,6 +89,57 @@ if is_on_adapter():
             cos the `AdapterTrainer` implementation forces using HF's AdamW
             """
             super(AdapterTrainer, self).create_optimizer()
+else:
+    class MyPeftModelForSeq2SeqLM(PeftModelForSeq2SeqLM):
+        """
+        Override `NotImplementedError` for `generate`
+        """
+
+        def generate(self, **kwargs):
+            peft_config = self.active_peft_config
+            self.base_model.prepare_inputs_for_generation = self.prepare_inputs_for_generation
+            self.base_model._prepare_encoder_decoder_kwargs_for_generation = (
+                self._prepare_encoder_decoder_kwargs_for_generation
+            )
+            try:
+                if not isinstance(peft_config, PromptLearningConfig):
+                    outputs = self.base_model.generate(**kwargs)
+                else:
+                    if "input_ids" not in kwargs:
+                        raise ValueError("input_ids must be provided for Peft model generation")
+                    if kwargs.get("position_ids", None) is not None:
+                        warnings.warn(
+                            "Position ids are not supported for parameter efficient tuning. Ignoring position ids."
+                        )
+                        kwargs["position_ids"] = None
+                    if kwargs.get("token_type_ids", None) is not None:
+                        warnings.warn(
+                            "Token type ids are not supported for parameter efficient tuning. Ignoring token type ids"
+                        )
+                        kwargs["token_type_ids"] = None
+
+                    # ========================== Begin of modified ==========================
+                    # if peft_config.peft_type == PeftType.PREFIX_TUNING:
+                    #     outputs = self.base_model.generate(**kwargs)
+                    # else:
+                    #     raise NotImplementedError
+                    outputs = self.base_model.generate(**kwargs)
+                    # ========================== End of modified ==========================
+            except:
+                self.base_model.prepare_inputs_for_generation = self.base_model_prepare_inputs_for_generation
+                self.base_model._prepare_encoder_decoder_kwargs_for_generation = (
+                    self.base_model_prepare_encoder_decoder_kwargs_for_generation
+                )
+                raise
+            else:
+                self.base_model.prepare_inputs_for_generation = self.base_model_prepare_inputs_for_generation
+                self.base_model._prepare_encoder_decoder_kwargs_for_generation = (
+                    self.base_model_prepare_encoder_decoder_kwargs_for_generation
+                )
+                return outputs
+
+    # so that `get_peft_model` uses the subclassed model
+    MODEL_TYPE_TO_PEFT_MODEL_MAPPING[TaskType.SEQ_2_SEQ_LM] = MyPeftModelForSeq2SeqLM
 
 
 def setup_train_output_path_n_loggers(args: Namespace, approach: str = None) -> Tuple[str, Logger]:

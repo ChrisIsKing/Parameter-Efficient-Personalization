@@ -10,7 +10,7 @@ from peft_u.util.util import *
 
 __all__ = [
     'hf_model_name_drop_org', 'get_train_output_path', 'prepend_local_model_path',
-    'hf_custom_model_cache_dir', 'get_hf_cache_dir',
+    'hf_custom_model_cache_dir', 'hf_custom_dataset_cache_dir', 'get_hf_model_cache_dir', 'get_hf_dataset_cache_dir',
     'get_cuda_free_mem'
 ]
 
@@ -55,10 +55,23 @@ def hf_custom_model_cache_dir():
     return path
 
 
-def get_hf_cache_dir():
+def hf_custom_dataset_cache_dir():
+    path = os_join(get_base_path(), '.cache', 'huggingface', 'datasets')
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def get_hf_model_cache_dir():
     ret = None
     if on_great_lakes():  # download to scratch folder if on GL to save space
         ret = hf_custom_model_cache_dir()
+    return ret
+
+
+def get_hf_dataset_cache_dir():
+    ret = None
+    if on_great_lakes():
+        ret = hf_custom_dataset_cache_dir()
     return ret
 
 

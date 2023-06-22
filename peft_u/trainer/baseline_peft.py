@@ -16,17 +16,8 @@ from transformers import (
     get_linear_schedule_with_warmup,
     PreTrainedTokenizer
 )
-from peft import (
-    LoraConfig, 
-    TaskType, 
-    PrefixTuningConfig, 
-    get_peft_model, 
-    PeftConfig, 
-    PeftModel,
-    PromptTuningInit, 
-    PromptTuningConfig,
-    PromptEncoderConfig,
-)
+from peft import TaskType, LoraConfig,  PrefixTuningConfig, PromptEncoderConfig, PromptTuningConfig, PromptTuningInit
+from peft import get_peft_model, PeftConfig, PeftModel, PeftModelForSeq2SeqLM
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
@@ -59,8 +50,8 @@ def parse_args():
 def load_model_n_tokenizer(
         model_name_or_path: str = HF_MODEL_NAME, peft_method: str = DEFAULT_PEFT_METHOD,
         verbose: bool = False, logger_fl: Logger = None
-) -> Tuple[PeftModel, PreTrainedTokenizer]:
-    cache_dir = model_util.get_hf_cache_dir()
+) -> Tuple[PeftModelForSeq2SeqLM, PreTrainedTokenizer]:
+    cache_dir = model_util.get_hf_model_cache_dir()
     if verbose:
         logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
     if logger_fl:
@@ -242,7 +233,7 @@ def train_single(
 
 
 def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple[PeftModel, PreTrainedTokenizer]:
-    cache_dir = model_util.get_hf_cache_dir()
+    cache_dir = model_util.get_hf_model_cache_dir()
     if verbose:
         logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
 
@@ -334,10 +325,10 @@ if __name__ == '__main__':
             # strt = 3896  # `measuringhatespeech.prefix`
             # strt = 3342  # `measuringhatespeech.p_tuning`
             # strt = 1161  # `measuringhatespeech.prompt_tuning`
-            # strt = 1714   # `cockamamie`
+            strt = 377   # `cockamamie`
             # strt = 3669  # `wikidetox`
             # strt = '45214884'  # `unhealthyconversations`
-            strt = None
+            # strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
             md_load_args = dict(peft_method=method, logger_fl=logger_fl)
@@ -455,14 +446,18 @@ if __name__ == '__main__':
     def try_generate():
         md_nm = HF_MODEL_NAME
         # md_nm = 't5-base'
-        model, tokenizer = load_model_n_tokenizer(model_name_or_path=md_nm, peft_method='p_tuning')
+        # method = 'prefix'
+        # method = 'p_tuning'
+        method = 'prompt_tuning'
+        model, tokenizer = load_model_n_tokenizer(model_name_or_path=md_nm, peft_method=method)
         model.eval()
         model.peft_config['default'].inference_mode = True
         mic(model.peft_config)
+        mic(type(model))
 
         text = 'Is the following test happy or not. Say `yes` or `no`. I am happy.'
         inputs = tokenizer(text, truncation=True, padding='max_length', return_tensors='pt')
-        mic(inputs)
+        # mic(inputs)
 
         with torch.no_grad():
             outputs = model.generate(**inputs, max_new_tokens=32)  # Greedy decoding
