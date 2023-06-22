@@ -87,11 +87,13 @@ def load_dataset(
             for eg in user_examples:
                 yield dict(text=eg.process_template(), label=eg.process_target())
         return gen
+
+    c_dir = model_util.get_hf_dataset_cache_dir()
     dsets = {
         uid: DatasetDict(
-            train=Dataset.from_generator(get_gen(u_data.train)),
-            validation=Dataset.from_generator(get_gen(u_data.val)),
-            test=Dataset.from_generator(get_gen(u_data.test))
+            train=Dataset.from_generator(get_gen(u_data.train), cache_dir=c_dir),
+            validation=Dataset.from_generator(get_gen(u_data.val), cache_dir=c_dir),
+            test=Dataset.from_generator(get_gen(u_data.test), cache_dir=c_dir)
         ) for uid, u_data in dsets.items()
     }
 
@@ -218,7 +220,10 @@ if __name__ == '__main__':
             )
 
             tm = Timer()
-            it = iter_users(dataset=dsets)
+            # strt = '72'  # `hatexplain`
+            strt = 377  # `cockamamie`
+            # strt = None
+            it = iter_users(dataset=dsets, start_from=strt)
             n_user = len(it)
             logger.info(f'Training on users {pl.i(it)}... ')
             logger_fl.info(f'Training on users {it}... ')
