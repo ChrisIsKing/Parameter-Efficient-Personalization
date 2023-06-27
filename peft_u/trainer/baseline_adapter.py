@@ -12,7 +12,7 @@ import os
 from os.path import join as os_join
 from typing import Tuple, List, Dict
 from logging import Logger
-from argparse import ArgumentParser, Namespace
+from argparse import Namespace
 
 import numpy as np
 import torch
@@ -30,7 +30,7 @@ from peft_u.util import *
 import peft_u.util.models as model_util
 import peft_u.util.train as train_util
 from peft_u.preprocess.load_dataset import *
-from peft_u.trainer import HF_MODEL_NAME, parse_train_n_test_args
+from peft_u.trainer import HF_MODEL_NAME, get_arg_parser
 
 
 logger = get_logger('Adapter Baseline')
@@ -59,14 +59,15 @@ def reduce_hf_logging():
 
 
 def parse_args():
-    parser = ArgumentParser()
-    subparsers = parser.add_subparsers(dest="mode", required=True)
-    train_parser, test_parser = parse_train_n_test_args(
-        train_parser=subparsers.add_parser('train'), test_parser=subparsers.add_parser('test')
-    )
-    train_parser.add_argument(
-        "--method", type=str, required=False, default=DEFAULT_ADAPTER_METHOD, choices=ADAPTER_METHODS)
-    return parser.parse_args()
+    # parser = ArgumentParser()
+    # subparsers = parser.add_subparsers(dest="mode", required=True)
+    # train_parser, test_parser = get_arg_parser(
+    #     train_parser=subparsers.add_parser('train'), test_parser=subparsers.add_parser('test')
+    # )
+    # train_parser.add_argument(
+    #     "--method", type=str, required=False, default=DEFAULT_ADAPTER_METHOD, choices=ADAPTER_METHODS)
+    # return parser.parse_args()
+    return get_arg_parser(default_method=DEFAULT_ADAPTER_METHOD, method_choices=ADAPTER_METHODS).parser.parse_args()
 
 
 def get_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> T5TokenizerFast:
@@ -221,7 +222,8 @@ if __name__ == '__main__':
 
             tm = Timer()
             # strt = '72'  # `hatexplain`
-            strt = 27  # `cockamamie`
+            strt = 1163  # `cockamamie`
+            # strt = 637  # `wikidetox`
             # strt = None
             it = iter_users(dataset=dsets, start_from=strt)
             n_user = len(it)

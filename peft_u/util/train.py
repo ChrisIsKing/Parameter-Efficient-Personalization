@@ -132,8 +132,8 @@ else:
                                 batch_size, peft_config.num_virtual_tokens).to(kwargs["input_ids"].device)
                             kwargs["attention_mask"] = torch.cat(
                                 (prefix_attention_mask, kwargs["attention_mask"]), dim=1).to(self.device)
-                        prompts = self.get_prompt(batch_size=batch_size)
 
+                        prompts = self.get_prompt(batch_size=batch_size)
                         assert peft_config.num_transformer_submodules == 2
                         if kwargs.get("inputs_embeds", None) is None:
                             inputs_embeds = self.word_embeddings(kwargs["input_ids"].to(self.device))
@@ -151,10 +151,6 @@ else:
                                 (prompts[:, peft_config.num_virtual_tokens:], decoder_inputs_embeds), dim=1)
                             kwargs["decoder_inputs_embeds"] = decoder_inputs_embeds
                             kwargs["decoder_input_ids"] = None
-                        # mic('in my peft generate')
-                        # for k, v in kwargs.items():
-                        #     if v is not None and k != 'max_new_tokens':
-                        #         mic(k, v.shape, v.device)
                         outputs = self.base_model.generate(**kwargs)
                         # ========================== End of modified ==========================
             except:
