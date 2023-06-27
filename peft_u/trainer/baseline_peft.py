@@ -2,7 +2,6 @@ import os
 from os.path import join as os_join
 from typing import Tuple, List, Dict, Union
 from logging import Logger
-from argparse import ArgumentParser
 from functools import partial
 
 import numpy as np
@@ -26,7 +25,7 @@ from peft_u.util import *
 import peft_u.util.models as model_util
 import peft_u.util.train as train_util
 from peft_u.preprocess.load_dataset import *
-from peft_u.trainer import HF_MODEL_NAME, parse_train_n_test_args
+from peft_u.trainer import HF_MODEL_NAME, get_arg_parser
 
 
 logger = get_logger('PEFT Baseline')
@@ -37,14 +36,17 @@ DEFAULT_PEFT_METHOD = 'lora'
 
 
 def parse_args():
-    parser = ArgumentParser()
-    subparsers = parser.add_subparsers(dest="mode", required=True)
-    train_parser, test_parser = parse_train_n_test_args(
-        train_parser=subparsers.add_parser('train'), test_parser=subparsers.add_parser('test')
-    )
-    train_parser.add_argument("--method", type=str, required=False, default=DEFAULT_PEFT_METHOD, choices=PEFT_METHODS)
-    test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
-    return parser.parse_args()
+    # parser = ArgumentParser()
+    # subparsers = parser.add_subparsers(dest="mode", required=True)
+    # train_parser, test_parser = get_arg_parser(
+    #     train_parser=subparsers.add_parser('train'), test_parser=subparsers.add_parser('test')
+    # )
+    # train_parser.add_argument("--method", type=str, required=False, default=DEFAULT_PEFT_METHOD, choices=PEFT_METHODS)
+    # test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
+    # return parser.parse_args()
+    out = get_arg_parser(default_method=DEFAULT_PEFT_METHOD, method_choices=PEFT_METHODS)
+    out.test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
+    return out.parser.parse_args()
 
 
 def load_model_n_tokenizer(
@@ -72,11 +74,14 @@ def load_model_n_tokenizer(
         if peft_method == 'lora':
             peft_config = LoraConfig(**config_d, r=8, lora_alpha=32, lora_dropout=0.1)
         else:
-            config_d['num_virtual_tokens'] = 20
+            _debug_larger_param = False
+            config_d['num_virtual_tokens'] = 32 if _debug_larger_param else 20
             if peft_method == 'prefix':
                 peft_config = PrefixTuningConfig(**config_d)
             elif peft_method == 'p_tuning':
-                peft_config: PeftConfig = PromptEncoderConfig(**config_d, encoder_hidden_size=128)
+                peft_config: PeftConfig = PromptEncoderConfig(
+                    **config_d, encoder_hidden_size=256 if _debug_larger_param else 128
+                )
             else:
                 assert peft_method == 'prompt_tuning'
                 peft_config: PeftConfig = PromptTuningConfig(**config_d, prompt_tuning_init=PromptTuningInit.RANDOM)
@@ -285,7 +290,7 @@ def test_single(
         if i_ba + 1 == n_ba:  # last iteration
             ret = train_util.test_user_update_postfix_n_write_df(
                 label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
-                df_out_path=os_join(eval_output_path, uid2u_str(user_id))
+                df_out_path=os_join(eval_output_path, f'{uid2u_str(user_id)}.csv')
             )
     return ret
 
@@ -325,10 +330,10 @@ if __name__ == '__main__':
             # strt = 3896  # `measuringhatespeech.prefix`
             # strt = 3342  # `measuringhatespeech.p_tuning`
             # strt = 1161  # `measuringhatespeech.prompt_tuning`
-            # strt = 377   # `cockamamie`
-            # strt = 3669  # `wikidetox`
+            # strt = 101   # `cockamamie`
+            strt = 21  # `wikidetox`
             # strt = '45214884'  # `unhealthyconversations`
-            strt = None
+            # strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
             md_load_args = dict(peft_method=method, logger_fl=logger_fl)
@@ -441,7 +446,7 @@ if __name__ == '__main__':
             t_e = tm.end()
             logger.info(f'Testing done in {pl.i(t_e)}')
             logger_fl.info(f'Testing done in {t_e}')
-    # command_prompt()
+    command_prompt()
 
     def try_generate():
         md_nm = HF_MODEL_NAME
@@ -463,4 +468,4 @@ if __name__ == '__main__':
             outputs = model.generate(**inputs, max_new_tokens=32)  # Greedy decoding
         lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
         mic(lst_decoded)
-    try_generate()
+    # try_generate()
