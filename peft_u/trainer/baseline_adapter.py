@@ -59,14 +59,6 @@ def reduce_hf_logging():
 
 
 def parse_args():
-    # parser = ArgumentParser()
-    # subparsers = parser.add_subparsers(dest="mode", required=True)
-    # train_parser, test_parser = get_arg_parser(
-    #     train_parser=subparsers.add_parser('train'), test_parser=subparsers.add_parser('test')
-    # )
-    # train_parser.add_argument(
-    #     "--method", type=str, required=False, default=DEFAULT_ADAPTER_METHOD, choices=ADAPTER_METHODS)
-    # return parser.parse_args()
     return get_arg_parser(default_method=DEFAULT_ADAPTER_METHOD, method_choices=ADAPTER_METHODS).parser.parse_args()
 
 
@@ -222,9 +214,10 @@ if __name__ == '__main__':
 
             tm = Timer()
             # strt = '72'  # `hatexplain`
-            strt = 1163  # `cockamamie`
-            # strt = 637  # `wikidetox`
-            # strt = None
+            # strt = 1163  # `cockamamie`
+            # strt = 1936  # `wikidetox.ia3`
+            # strt = 1824  # `wikidetox.houlsby`
+            strt = None
             it = iter_users(dataset=dsets, start_from=strt)
             n_user = len(it)
             logger.info(f'Training on users {pl.i(it)}... ')
