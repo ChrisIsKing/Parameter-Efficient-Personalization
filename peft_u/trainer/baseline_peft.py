@@ -15,8 +15,9 @@ from transformers import (
     get_linear_schedule_with_warmup,
     PreTrainedTokenizer
 )
-from peft import TaskType, LoraConfig,  PrefixTuningConfig, PromptEncoderConfig, PromptTuningConfig, PromptTuningInit
 from peft import get_peft_model, PeftConfig, PeftModel, PeftModelForSeq2SeqLM
+from peft import TaskType, LoraConfig,  PrefixTuningConfig, PromptEncoderConfig, PromptTuningConfig
+from peft import PromptTuningInit, PromptEncoderReparameterizationType
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
@@ -36,14 +37,6 @@ DEFAULT_PEFT_METHOD = 'lora'
 
 
 def parse_args():
-    # parser = ArgumentParser()
-    # subparsers = parser.add_subparsers(dest="mode", required=True)
-    # train_parser, test_parser = get_arg_parser(
-    #     train_parser=subparsers.add_parser('train'), test_parser=subparsers.add_parser('test')
-    # )
-    # train_parser.add_argument("--method", type=str, required=False, default=DEFAULT_PEFT_METHOD, choices=PEFT_METHODS)
-    # test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
-    # return parser.parse_args()
     out = get_arg_parser(default_method=DEFAULT_PEFT_METHOD, method_choices=PEFT_METHODS)
     out.test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
     return out.parser.parse_args()
@@ -75,16 +68,27 @@ def load_model_n_tokenizer(
             peft_config = LoraConfig(**config_d, r=8, lora_alpha=32, lora_dropout=0.1)
         else:
             _debug_larger_param = False
+            _encoder_insertion_only = True
+            # mic(_encoder_insertion_only)
             config_d['num_virtual_tokens'] = 32 if _debug_larger_param else 20
             if peft_method == 'prefix':
                 peft_config = PrefixTuningConfig(**config_d)
             elif peft_method == 'p_tuning':
                 peft_config: PeftConfig = PromptEncoderConfig(
-                    **config_d, encoder_hidden_size=256 if _debug_larger_param else 128
+                    **config_d, encoder_hidden_size=256 if _debug_larger_param else 128,
+                    # originally MLP, the original paper uses LSTM
+                    encoder_reparameterization_type=PromptEncoderReparameterizationType.LSTM
+                    if _encoder_insertion_only else PromptEncoderReparameterizationType.MLP,
+                    # for prompting in encoder input only
+                    num_transformer_submodules=1 if _encoder_insertion_only else 2
                 )
             else:
                 assert peft_method == 'prompt_tuning'
-                peft_config: PeftConfig = PromptTuningConfig(**config_d, prompt_tuning_init=PromptTuningInit.RANDOM)
+                peft_config: PeftConfig = PromptTuningConfig(
+                    **config_d, prompt_tuning_init=PromptTuningInit.RANDOM,
+                    # for prompting in encoder input only
+                    num_transformer_submodules=1 if _encoder_insertion_only else 2
+                )
         model = get_peft_model(model, peft_config)
 
     model_meta = get_model_meta(model)
@@ -123,7 +127,7 @@ def train_single(
 
     def _save(dir_nm: str):
         model.save_pretrained(os_join(output_path, dir_nm))
-        tokenizer.save_pretrained(os_join(output_path, dir_nm))
+        # tokenizer.save_pretrained(os_join(output_path, dir_nm))
         if verbose:
             logger.info(f'Model and tokenizer saved to {pl.i(output_path)}')
 
@@ -245,7 +249,7 @@ def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple
     config = PeftConfig.from_pretrained(model_name_or_path)
     model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir)
     model = PeftModel.from_pretrained(model, model_name_or_path)
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
 
     if torch.cuda.is_available():
         model = model.cuda()
@@ -330,8 +334,8 @@ if __name__ == '__main__':
             # strt = 3896  # `measuringhatespeech.prefix`
             # strt = 3342  # `measuringhatespeech.p_tuning`
             # strt = 1161  # `measuringhatespeech.prompt_tuning`
-            # strt = 101   # `cockamamie`
-            strt = 21  # `wikidetox`
+            strt = 1678   # `cockamamie`
+            # strt = 27  # `wikidetox`
             # strt = '45214884'  # `unhealthyconversations`
             # strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
