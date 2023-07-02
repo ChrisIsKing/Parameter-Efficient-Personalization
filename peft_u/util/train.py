@@ -289,7 +289,7 @@ class GetPredId:
     def __init__(self, label_options: List[str], logger_fl: Logger = None):
         self.label_options = label_options
         self.lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
-        self.lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed'], label_options=label_options)
+        self.lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed', '"', ')'], label_options=label_options)
 
         self.logger_fl = logger_fl
 

@@ -1,6 +1,6 @@
 import os
 from os.path import join as os_join
-from typing import Tuple, List, Dict, Union
+from typing import Tuple, List, Dict, Union, Any
 from logging import Logger
 from functools import partial
 
@@ -63,32 +63,46 @@ def load_model_n_tokenizer(
         if logger_fl:
             logger_fl.info('Loading Peft model...')
 
-        config_d = dict(task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False)
+        config_d: Dict[str, Any] = dict(task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False)
+        _same_param_exp = False
         if peft_method == 'lora':
-            peft_config = LoraConfig(**config_d, r=8, lora_alpha=32, lora_dropout=0.1)
+            peft_config = LoraConfig(**config_d, r=1 if _same_param_exp else 8, lora_alpha=32, lora_dropout=0.1)
         else:
-            _debug_larger_param = False
-            _encoder_insertion_only = True
+            _encoder_insertion_only = True  # for prompting in encoder input only
             # mic(_encoder_insertion_only)
-            config_d['num_virtual_tokens'] = 32 if _debug_larger_param else 20
+            config_d['num_virtual_tokens'] = 20
             if peft_method == 'prefix':
+                if _same_param_exp:
+                    config_d['num_virtual_tokens'] = 6
                 peft_config = PrefixTuningConfig(**config_d)
             elif peft_method == 'p_tuning':
-                peft_config: PeftConfig = PromptEncoderConfig(
-                    **config_d, encoder_hidden_size=256 if _debug_larger_param else 128,
-                    # originally MLP, the original paper uses LSTM
-                    encoder_reparameterization_type=PromptEncoderReparameterizationType.LSTM
-                    if _encoder_insertion_only else PromptEncoderReparameterizationType.MLP,
-                    # for prompting in encoder input only
-                    num_transformer_submodules=1 if _encoder_insertion_only else 2
-                )
+                if _encoder_insertion_only:
+                    if _same_param_exp:
+                        config_d.update(dict(encoder_hidden_size=12, encoder_num_layers=1))
+                    else:
+                        config_d.update(dict(encoder_hidden_size=128, encoder_num_layers=2))
+                    peft_config: PeftConfig = PromptEncoderConfig(
+                        **config_d, num_transformer_submodules=1,
+                        # the original paper uses LSTM
+                        encoder_reparameterization_type=PromptEncoderReparameterizationType.LSTM
+                    )
+                else:  # old experiments used this setup
+                    assert not _same_param_exp  # experiment intended for updated p-tuning only
+                    peft_config: PeftConfig = PromptEncoderConfig(
+                        **config_d, num_transformer_submodules=2,
+                        encoder_reparameterization_type=PromptEncoderReparameterizationType.MLP
+                    )
             else:
                 assert peft_method == 'prompt_tuning'
+                if _same_param_exp:
+                    config_d['num_virtual_tokens'] = 144
+                if not _encoder_insertion_only:
+                    assert not _same_param_exp  # experiment intended for updated p-tuning only
                 peft_config: PeftConfig = PromptTuningConfig(
                     **config_d, prompt_tuning_init=PromptTuningInit.RANDOM,
-                    # for prompting in encoder input only
                     num_transformer_submodules=1 if _encoder_insertion_only else 2
                 )
+        # mic(peft_config)
         model = get_peft_model(model, peft_config)
 
     model_meta = get_model_meta(model)
@@ -300,7 +314,8 @@ def test_single(
 
 
 def _get_dataset_and_users_it(
-        dataset_name: str, leakage: bool = False, uid_start_from: Union[str, int] = None, seed: int = None
+        dataset_name: str, leakage: bool = False,
+        uid_start_from: Union[str, int] = None, uid_end_at: Union[str, int] = None, seed: int = None
 ) -> Tuple[Dict[str, InputEgDataset], List[str]]:
     # from peft_u._dset_uid_too_small import uid_too_small
 
@@ -312,7 +327,7 @@ def _get_dataset_and_users_it(
     #
     #     def filt(x):
     #         return x not in lst_filt
-    it = iter_users(dataset=dset, start_from=uid_start_from, filter_fn=filt)
+    it = iter_users(dataset=dset, start_from=uid_start_from, end_at=uid_end_at, filter_fn=filt)
     return dset, it
 
 
@@ -333,11 +348,11 @@ if __name__ == '__main__':
             # strt = 5021  # `measuringhatespeech.lora`
             # strt = 3896  # `measuringhatespeech.prefix`
             # strt = 3342  # `measuringhatespeech.p_tuning`
-            # strt = 1161  # `measuringhatespeech.prompt_tuning`
-            strt = 1678   # `cockamamie`
-            # strt = 27  # `wikidetox`
-            # strt = '45214884'  # `unhealthyconversations`
-            # strt = None
+            # strt = 2450  # `measuringhatespeech.prompt_tuning`
+            # strt = 58   # `cockamamie`
+            # strt = 44  # `wikidetox`
+            # strt = '44590228'  # `unhealthyconversations`
+            strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
             md_load_args = dict(peft_method=method, logger_fl=logger_fl)
@@ -473,3 +488,12 @@ if __name__ == '__main__':
         lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
         mic(lst_decoded)
     # try_generate()
+
+    def check_learnable_param():
+        # method = 'lora'
+        # method = 'prefix'
+        # method = 'p_tuning'
+        method = 'prompt_tuning'
+        model, tokenizer = load_model_n_tokenizer(HF_MODEL_NAME, peft_method=method)
+        mic(get_trainable_param_meta(model, fmt='int'))
+    # check_learnable_param()
