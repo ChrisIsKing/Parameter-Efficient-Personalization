@@ -10,7 +10,7 @@ Note: remember to remove `transformers` and keep only `adapter-transformers`
 import math
 import os
 from os.path import join as os_join
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Any
 from logging import Logger
 from argparse import Namespace
 
@@ -70,10 +70,16 @@ def get_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> T5TokenizerFast:
 
 
 def load_dataset(
-        dataset_name: str = None, leakage: bool = None, seed: int = None,
+        dataset_name: str = None, leakage: bool = None, seed: int = None, load_users_args: Dict[str, Any] = None,
         tokenizer: T5TokenizerFast = None, tokenize: bool = True, **kwargs
-) -> Dict[str, DatasetDict]:
+) -> Tuple[Dict[str, DatasetDict], List[str]]:
     dsets = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed)
+
+    user_ids = iter_users(dataset=dsets, **(load_users_args or dict()))
+    n_original_user, n_user = len(dsets), len(user_ids)
+    if n_original_user > n_user:  # saves later processing time, matters for huge datasets
+        logger.info(f'Filtering user ids: {pl.i(n_original_user)} => {pl.i(n_user)}')
+        dsets = {uid: dsets[uid] for uid in user_ids}
 
     def get_gen(user_examples: List[InputExample]):
         def gen():
@@ -93,9 +99,9 @@ def load_dataset(
     if tokenize:
         def map_single(batch):
             return train_util.BatchCollator(tokenizer)(texts=batch['text'], labels=batch['label'])
-        return {uid: u_dset.map(map_single, batched=True, **kwargs) for uid, u_dset in dsets.items()}
+        return {uid: u_dset.map(map_single, batched=True, **kwargs) for uid, u_dset in dsets.items()}, user_ids
     else:
-        return dsets
+        return dsets, user_ids
 
 
 def get_train_meta(
@@ -166,8 +172,9 @@ def load_adapter_model(
         logger_fl: Logger = None
 ) -> T5AdapterModel:
     model = load_t5_model_with_lm_head(model_name_or_path=model_name_or_path, dummy_hf_model_name=model_name_or_path)
+    _same_param_exp = False
     if adapter_method == 'Houlsby':
-        adapter_config = HoulsbyConfig()
+        adapter_config = HoulsbyConfig(reduction_factor=512 if _same_param_exp else 16)
     else:
         assert adapter_method == 'IA3'
         adapter_config = IA3Config()
@@ -207,18 +214,22 @@ if __name__ == '__main__':
             output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='adapter')
 
             tokenizer = get_tokenizer(model_name_or_path=model_name_or_path)
-            dsets = load_dataset(
+
+            # strt = '72'  # `hatexplain`
+            # strt = 1163  # `cockamamie`
+            # strt = 1936  # `wikidetox.ia3`
+            strt = 36  # `wikidetox.houlsby`
+            # strt = 5  # `studemo`
+            # strt = None
+            end = 47  # `wikidetox`
+            # end = None
+            dsets, it = load_dataset(
                 dataset_name=dataset_name, leakage=leakage, seed=seed,
+                load_users_args=dict(start_from=strt, end_at=end),
                 tokenizer=tokenizer, remove_columns=['text', 'label']
             )
 
             tm = Timer()
-            # strt = '72'  # `hatexplain`
-            # strt = 1163  # `cockamamie`
-            # strt = 1936  # `wikidetox.ia3`
-            # strt = 1824  # `wikidetox.houlsby`
-            strt = None
-            it = iter_users(dataset=dsets, start_from=strt)
             n_user = len(it)
             logger.info(f'Training on users {pl.i(it)}... ')
             logger_fl.info(f'Training on users {it}... ')
@@ -275,9 +286,8 @@ if __name__ == '__main__':
 
             model_name_or_path = model_util.prepend_local_model_path(model_path=model_name_or_path)
             tokenizer = get_tokenizer(model_name_or_path=HF_MODEL_NAME)
-            dsets = load_dataset(dataset_name=dataset_name, leakage=leakage, seed=seed, tokenizer=tokenizer)
+            dsets, it = load_dataset(dataset_name=dataset_name, leakage=leakage, seed=seed, tokenizer=tokenizer)
 
-            it = iter_users(dataset=dsets)
             n_user = len(it)
 
             label_options = sconfig(f'datasets.{dataset_name}.labels')
@@ -332,3 +342,28 @@ if __name__ == '__main__':
             logger.info(f'Testing done in {pl.i(t_e_)}')
             logger_fl.info(f'Testing done in {t_e_}')
     command_prompt()
+
+    def check_learnable_param():
+        # method = 'Houlsby'
+        method = 'IA3'
+        model = load_adapter_model(HF_MODEL_NAME, adapter_method=method, user_id='bla')
+        mic(get_trainable_param_meta(model, fmt='int'))
+    # check_learnable_param()
+
+    def check_untrained_users():
+        from tqdm import tqdm
+
+        # model_dnm = '23-06-22_{adapter=Houlsby, md_nm=flan-t5-base, ds=wikidetox}'
+        model_dnm = '23-06-22_{adapter=IA3, md_nm=flan-t5-base, ds=wikidetox}'
+        model_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_dnm)
+
+        dsets = load_dataset_with_prompts(dataset_name='wikidetox', leakage=True, seed=42)
+        users = iter_users(dataset=dsets)
+
+        untrained = []
+        for uid in tqdm(users, desc='Looking for untrained users'):
+            path = os_join(model_path, uid2u_str(uid), 'trained')
+            if not os.path.exists(path):
+                untrained.append(uid)
+        mic(untrained)
+    # check_untrained_users()
