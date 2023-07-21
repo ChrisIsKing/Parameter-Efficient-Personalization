@@ -68,8 +68,7 @@ def load_model_n_tokenizer(
         if peft_method == 'lora':
             peft_config = LoraConfig(**config_d, r=1 if _same_param_exp else 8, lora_alpha=32, lora_dropout=0.1)
         else:
-            _encoder_insertion_only = True  # for prompting in encoder input only
-            # mic(_encoder_insertion_only)
+            _encoder_insertion_only = False  # for prompting in encoder input only
             config_d['num_virtual_tokens'] = 20
             if peft_method == 'prefix':
                 if _same_param_exp:
@@ -102,7 +101,6 @@ def load_model_n_tokenizer(
                     **config_d, prompt_tuning_init=PromptTuningInit.RANDOM,
                     num_transformer_submodules=1 if _encoder_insertion_only else 2
                 )
-        # mic(peft_config)
         model = get_peft_model(model, peft_config)
 
     model_meta = get_model_meta(model)
@@ -349,10 +347,12 @@ if __name__ == '__main__':
             # strt = 3896  # `measuringhatespeech.prefix`
             # strt = 3342  # `measuringhatespeech.p_tuning`
             # strt = 2450  # `measuringhatespeech.prompt_tuning`
-            # strt = 58   # `cockamamie`
-            # strt = 44  # `wikidetox`
+            # strt = 1705   # `cockamamie.p_tuning`
+            # strt = 1731  # `cockamamie.prompt_tuning`
+            # strt = 366  # `wikidetox`
+            strt = 2687  # wikidetox.p_tuning`
             # strt = '44590228'  # `unhealthyconversations`
-            strt = None
+            # strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
             md_load_args = dict(peft_method=method, logger_fl=logger_fl)
@@ -497,3 +497,13 @@ if __name__ == '__main__':
         model, tokenizer = load_model_n_tokenizer(HF_MODEL_NAME, peft_method=method)
         mic(get_trainable_param_meta(model, fmt='int'))
     # check_learnable_param()
+
+    def chore_remove_user_folder_nms():
+        dnm = 'cockamamie'
+        # strt = 1731
+        strt = 1705
+        _, it = _get_dataset_and_users_it(dataset_name=dnm, uid_start_from=strt)
+        # mic(it)
+        x = ' '.join(uid2u_str(uid) for uid in it)
+        print(x)
+    # chore_remove_user_folder_nms()
