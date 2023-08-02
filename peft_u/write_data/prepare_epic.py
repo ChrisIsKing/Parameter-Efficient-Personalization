@@ -17,10 +17,9 @@ if __name__ == '__main__':
     mic.output_width = 256
 
     dset_base_path = os_join(u.proj_path, u.dset_dir, 'epic')
-    os.makedirs(dset_base_path, exist_ok=True)
 
     df = pd.read_csv(os_join(dset_base_path, 'EPICorpus.csv'))
-    mic(df)
+    # mic(df)
 
     user_data = defaultdict(dict)
     label_map = {'iro': 'Ironic', 'not': 'Non-ironic'}  # TODO: what should be the textual labels called?
