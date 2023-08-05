@@ -1,9 +1,8 @@
+import os
 from os.path import join as os_join
-from typing import Tuple
 from logging import Logger
 
 import torch
-from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from stefutil import *
 from peft_u.util import *
@@ -15,6 +14,8 @@ import peft_u.trainer.train as train_util
 
 
 logger = get_logger('Personalized Head')
+
+trained_ph_fnm = 'ph.bin'
 
 
 def load_model(
@@ -40,9 +41,14 @@ class TrainSaver:
 
     def __call__(self, output_dir_nm: str):
         out = os_join(self.output_base_path, output_dir_nm)
-        torch.save(self.model.p_encoder.state_dict(), out)
+        os.makedirs(out, exist_ok=True)
+        out = os_join(out, trained_ph_fnm)
+        if self.model.insert_encoder_layer:
+            torch.save(self.model.encoder.block[-1].state_dict(), out)
+        else:  # insert encoder stack
+            torch.save(self.model.encoder.state_dict(), out)
         if self.verbose:
-            logger.info(f'Model saved to {pl.i(out)}')
+            logger.info(f'Model Personalized Head saved to {pl.i(out)}')
 
 
 if __name__ == '__main__':
@@ -68,6 +74,8 @@ if __name__ == '__main__':
         dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed)
         strt = None
         it = iter_users(dataset=dset, start_from=strt)
+        it = it[:4]  # TODO: debugging
+
         n_user = len(it)
         logger.info(f'Training on users {pl.i(it)}... ')
         logger_fl.info(f'Training on users {it}... ')
@@ -77,16 +85,15 @@ if __name__ == '__main__':
             tokenizer=train_util.load_tokenizer(),
             seed=seed, batch_size=args.batch_size, num_epochs=args.num_epochs,
             learning_rate=args.learning_rate, weight_decay=args.weight_decay,
-            output_path=output_path
+            output_path=output_path, saver_cls=TrainSaver
         )
         for i, uid in enumerate(it, start=1):
             user_str_ordinal = train_util.get_user_str_w_ordinal(user_id=uid, user_idx=i, n_user=n_user)
             logger.info(f'Launching {pl.i(dataset_name)} personalized training for User {user_str_ordinal}...')
 
             tm_ = Timer()
-            model = load_model(model_name_or_path=model_name_or_path, verbose=True)
-            saver = TrainSaver(model=model, output_base_path=output_path)
-            trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False, saver=saver)
+            model = load_model(model_name_or_path=model_name_or_path, logger_fl=logger_fl)
+            trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False)
             t_e_ = tm_.end()
             logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
             logger_fl.info(f'Training for User {uid} done in {t_e_}')

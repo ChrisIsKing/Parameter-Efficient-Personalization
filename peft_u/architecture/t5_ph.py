@@ -125,9 +125,6 @@ num_heads)`.
 """
 
 
-INSERT_ENCODER_LAYER = True  # otherwise, insert additional encoder stack
-
-
 class PHT5Stack(T5Stack):
     """
     Insert an additional encoder layer
@@ -163,6 +160,7 @@ class PHT5Stack(T5Stack):
 
 
 class PHT5ForConditionalGeneration(T5ForConditionalGeneration):
+
     def __init__(self, config: T5Config):
         super().__init__(config)
         self.model_dim = config.d_model
@@ -174,15 +172,16 @@ class PHT5ForConditionalGeneration(T5ForConditionalGeneration):
         encoder_config.use_cache = False
         encoder_config.is_encoder_decoder = False
         # ========================== Begin of modified ==========================
+        self.insert_encoder_layer = True  # otherwise, insert additional encoder stack
         # self.encoder = T5Stack(encoder_config, self.shared)
-        if INSERT_ENCODER_LAYER:
+        if self.insert_encoder_layer:
             self.encoder = PHT5Stack(encoder_config, self.shared)
         else:
             self.encoder = T5Stack(encoder_config, self.shared)
         # ========================== End of modified ==========================
 
         # ========================== Begin of added ==========================
-        if not INSERT_ENCODER_LAYER:
+        if not self.insert_encoder_layer:
             # Insert an additional encoder layer
             # Have to modify original init code cos need `post_init` call
             p_encoder_config = copy.deepcopy(config)
@@ -212,7 +211,7 @@ class PHT5ForConditionalGeneration(T5ForConditionalGeneration):
         modified from `peft.PeftModel::_setup_prompt_encoder`
         """
         transformer_backbone = None
-        if INSERT_ENCODER_LAYER:
+        if self.insert_encoder_layer:
             ph_block_idx = self.config.num_layers
             ph_nm = f'encoder.block.{ph_block_idx}'
             for name, module in self.named_parameters():
