@@ -13,7 +13,7 @@ from peft_u.util import *
 
 __all__ = [
     'PersonalizedData', 'PersonalizedDataset',
-    'InputExample', 'InputEgDataset', 'ListDataset',
+    'InputExample', 'InputEgDataset', 'ListDataset', 'get_dataset_sizes',
     'load_dataset_with_prompts', 'sort_user_ids', 'iter_users'
 ]
 
@@ -61,6 +61,11 @@ class InputEgDataset:
     train: List[InputExample]
     val: List[InputExample]
     test: List[InputExample]
+
+
+def get_dataset_sizes(dataset: InputEgDataset):
+    tr, vl, ts = dataset.train, dataset.val, dataset.test
+    return dict(train_sz=len(tr), val_sz=len(vl), test_sz=len(ts))
 
 
 class ListDataset(Dataset):

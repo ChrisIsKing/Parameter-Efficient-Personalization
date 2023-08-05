@@ -28,7 +28,7 @@ from datasets import Dataset, DatasetDict
 from stefutil import *
 from peft_u.util import *
 import peft_u.util.models as model_util
-import peft_u.util.train as train_util
+import peft_u.trainer.train as train_util
 from peft_u.preprocess.load_dataset import *
 from peft_u.trainer import HF_MODEL_NAME, get_arg_parser
 

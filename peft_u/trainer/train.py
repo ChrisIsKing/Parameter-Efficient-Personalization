@@ -4,16 +4,22 @@ from os.path import join as os_join
 from typing import Tuple, List, Dict, Union, Callable
 from logging import Logger
 from argparse import Namespace
+from functools import partial
+from dataclasses import dataclass
+from typing import List
+from argparse import ArgumentParser
 from dataclasses import dataclass
 
 import numpy as np
-from transformers import T5TokenizerFast
-from transformers import Trainer, TrainingArguments, TrainerCallback
+from torch.utils.data import DataLoader
+from transformers import T5TokenizerFast, PreTrainedTokenizer, AutoTokenizer
+from transformers import Trainer, TrainingArguments, TrainerCallback, get_linear_schedule_with_warmup
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from stefutil import *
-from peft_u.util.util import *
+from peft_u.util import *
+from peft_u.preprocess.load_dataset import *
 import peft_u.util.models as model_util
 
 
@@ -29,8 +35,10 @@ else:
 
 
 __all__ = [
+    'HF_MODEL_NAME', 'get_arg_parser',
     'TqdmPostfixCallback',
-    'setup_train_output_path_n_loggers', 'BatchCollator',
+    'setup_train_output_path_n_loggers', 'load_tokenizer', 'BatchCollator',
+    'MyTrainer',
     'get_user_str_w_ordinal',
     'get_user_test_pbar',
     'PredIdPair', 'GetPredId',
@@ -43,6 +51,209 @@ else:
 
 
 logger = get_logger('Train Util')
+
+
+HF_MODEL_NAME = 'google/flan-t5-base'
+
+dataset_names = list(sconfig('datasets'))
+
+
+def _add_args(parser: ArgumentParser) -> ArgumentParser:
+    parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
+    parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
+    parser.add_argument("--leakage", type=str, required=False, default=True)
+    parser.add_argument("--seed", type=int, required=False, default=42)
+    parser.add_argument("--batch_size", type=int, required=False, default=8)
+    return parser
+
+
+@dataclass
+class ArgParser:
+    parser: ArgumentParser = None
+    train_parser: ArgumentParser = None
+    test_parser: ArgumentParser = None
+
+
+def get_arg_parser(default_method: str = None, method_choices: List[str] = None, has_method: bool = True) -> ArgParser:
+    parser = ArgumentParser()
+    subparsers = parser.add_subparsers(dest="mode", required=True)
+    train_parser, test_parser = subparsers.add_parser('train'), subparsers.add_parser('test')
+    if has_method:
+        train_parser.add_argument(
+            "--method", type=str, required=False, default=default_method, choices=method_choices)
+    # otherwise case for personalized head
+    train_parser = _add_args(train_parser)
+    train_parser.add_argument("--num_epochs", type=int, required=False, default=8)
+    train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
+    train_parser.add_argument("--weight_decay", type=float, required=False, default=0.01)
+    train_parser.add_argument("--output_dir", type=str, required=False, default=None)
+    # Run on `cuda` if available, always personalize
+    return ArgParser(parser=parser, train_parser=train_parser, test_parser=_add_args(test_parser))
+
+
+def load_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> PreTrainedTokenizer:
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    tokenizer.model_max_length = 512
+    return tokenizer
+
+
+class BatchCollator:
+    tok_args = dict(truncation=True, padding='max_length', return_tensors='pt')
+
+    def __init__(self, tokenizer: PreTrainedTokenizer):
+        self.tokenizer = tokenizer
+
+    def __call__(self, texts: List[str], labels: List[str] = None):
+        ret = self.tokenizer(texts, **BatchCollator.tok_args)
+        labels = self.tokenizer(labels, **BatchCollator.tok_args)['input_ids']
+        labels[labels == self.tokenizer.pad_token_id] = -100  # `-100` is ignored in loss
+        ret['labels'] = labels
+        return ret
+
+
+def smart_batching_collate(batch: List, tokenizer: PreTrainedTokenizer):
+    """
+    Collate function for PyTorch DataLoader
+    """
+    return BatchCollator(tokenizer)(
+        texts=[example.process_template() for example in batch],
+        labels=[example.process_target() for example in batch]
+    )
+
+
+class MyTrainer:
+    def __init__(
+            self, tokenizer: PreTrainedTokenizer, seed: int = 42,
+            batch_size: int = 8, num_epochs: int = 3, learning_rate: float = 2e-5, weight_decay: float = 0.01,
+            output_path: str = None
+    ):
+        self.tokenizer = tokenizer
+        self.seed = seed
+        self.batch_size = batch_size
+        self.num_epochs = num_epochs
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
+
+        self.output_path = output_path
+
+    def __call__(
+            self, model: torch.nn.Module, dataset: InputEgDataset,
+            user_id: str = None, verbose: bool = False, save_per_epoch: bool = True,
+            saver: Callable[[str], None] = None,
+    ):
+        output_path = os_join(self.output_path, uid2u_str(user_id))
+
+        set_seed(self.seed)
+        collate_fn = partial(smart_batching_collate, tokenizer=self.tokenizer)
+        tr, vl, ts = dataset.train, dataset.val, dataset.test
+
+        train_dataloader = DataLoader(ListDataset(tr), batch_size=self.batch_size, shuffle=True, collate_fn=collate_fn)
+        val_dataloader = DataLoader(ListDataset(vl), batch_size=self.batch_size, collate_fn=collate_fn)
+
+        # params = list(model.parameters())
+        # mic(params, len(params))
+        # raise NotImplementedError
+        optimizer = torch.optim.AdamW(model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+
+        n_step_per_epoch = len(train_dataloader)
+        n_step = (n_step_per_epoch * self.num_epochs)
+        lr_scheduler = get_linear_schedule_with_warmup(
+            optimizer=optimizer,
+            num_warmup_steps=int(n_step * 0.1),
+            num_training_steps=n_step,
+        )
+
+        fp = os_join(output_path, 'train.log')
+        logger_fl = get_logger(f'PEFT Train User-{user_id}', kind='file-write', file_path=fp)
+        tb_writer = SummaryWriter(os_join(output_path, f'tensorboard'))
+        d_log = get_dataset_sizes(dataset)
+        logger.info(f'Dataset sizes: {pl.i(d_log)}')
+        logger_fl.info(f'Dataset sizes: {d_log}')
+
+        pret = MlPrettier(ref=dict(step=n_step_per_epoch, epoch=self.num_epochs), metric_keys=['cls_acc'])
+        ls = LogStep(prettier=pret, logger=logger, file_logger=logger_fl, tb_writer=tb_writer)
+
+        best_val_loss = float('inf')
+
+        for epoch in range(1, self.num_epochs+1):
+            model.train()
+            total_tr_loss = 0
+
+            tr_desc = f'Train Epoch {pl.i(epoch)}/{pl.i(self.num_epochs)}'
+            it = tqdm(enumerate(train_dataloader, start=1), desc=tr_desc, total=n_step_per_epoch)
+            for step, batch in it:
+                if torch.cuda.is_available():
+                    batch = {k: v.cuda() for k, v in batch.items()}
+                outputs = model(**batch)
+                loss = outputs.loss
+                loss_item = loss.detach().item()
+                total_tr_loss += loss_item
+                loss.backward()
+                optimizer.step()
+                lr_scheduler.step()
+                optimizer.zero_grad()
+
+                glob_step, lr = (epoch-1) * n_step_per_epoch + step, optimizer.param_groups[0]['lr']
+                d_log = dict(epoch=epoch, step=glob_step, lr=lr, loss=loss_item)
+                ls.pbar = it
+                ls(d_log, training=True, to_console=False)
+
+            model.eval()
+            cum_eval_loss = 0
+            eval_preds = []
+            vl_desc = f'Eval Epoch {pl.i(epoch)}/{pl.i(self.num_epochs)}'
+
+            n_vl_step = len(val_dataloader)
+            it = tqdm(enumerate(val_dataloader), desc=vl_desc, total=n_vl_step)
+
+            eval_epoch_loss = None
+            for step, batch in it:
+                if torch.cuda.is_available():
+                    batch = {k: v.cuda() for k, v in batch.items()}
+                with torch.no_grad():
+                    outputs = model(**batch)
+                cum_eval_loss += outputs.loss.detach().item()
+
+                decoded = self.tokenizer.batch_decode(
+                    torch.argmax(outputs.logits, -1).detach().cpu().numpy(), skip_special_tokens=True
+                )
+                eval_preds.extend(decoded)
+
+                if step + 1 == n_vl_step:  # last iteration
+                    eval_epoch_loss = cum_eval_loss / len(val_dataloader)
+                    eval_ppl = np.exp(eval_epoch_loss)
+
+                    n_correct = 0  # Eval classification accuracy
+                    n = 0
+                    for pred, true in zip(eval_preds, vl):
+                        # by empirical observation, the forward-pass tensors seems to repeat the single prediction label
+                        #  => an easy solution is just consider the first word as prediction;
+                        #  TODO: better & still fast ways?
+                        pred = pred.split(' ')[0].strip()
+                        labels = [lb.strip() for lb in true.process_target().split(', ')]
+                        if pred in labels:
+                            n_correct += 1
+                        n += 1
+
+                    train_epoch_loss = total_tr_loss / len(train_dataloader)
+                    d_log = dict(
+                        epoch=epoch, eval_loss=eval_epoch_loss, eval_ppl=eval_ppl, eval_cls_acc=n_correct/n,
+                        train_epoch_loss=train_epoch_loss, train_ppl=np.exp(train_epoch_loss)
+                    )
+                    ls.pbar = it
+                    ls(d_log, training=False, to_console=False)
+            assert eval_epoch_loss is not None  # sanity check
+
+            if save_per_epoch:
+                saver(f'epoch_{epoch:02d}')
+            if eval_epoch_loss < best_val_loss:
+                best_val_loss = eval_epoch_loss
+                saver('trained')
+
+                best_val_loss_ = round(best_val_loss, 4)
+                if verbose:
+                    logger.info(f'Best model saved w/ eval loss {pl.i(best_val_loss_)}')
+                logger_fl.info(f'Best model saved w/ eval loss {best_val_loss_}')
 
 
 class TqdmPostfixCallback(TrainerCallback):
@@ -207,7 +418,7 @@ else:
 
 
 def setup_train_output_path_n_loggers(args: Namespace, approach: str = None) -> Tuple[str, Logger]:
-    model_name_or_path, method = args.model, args.method
+    model_name_or_path, method = args.model, getattr(args, 'method', None)
     dataset_name, leakage = args.dataset_name, args.leakage
     batch_size, num_epochs, learning_rate = args.batch_size, args.num_epochs, args.learning_rate
     weight_decay = args.weight_decay
@@ -229,20 +440,6 @@ def setup_train_output_path_n_loggers(args: Namespace, approach: str = None) -> 
     logger.info(f'Training {pl.i(cap_ap)} w/ {pl.i(d_log)}...')
     logger_fl.info(f'Training {cap_ap} w/ {d_log}...')
     return output_path, logger_fl
-
-
-class BatchCollator:
-    tok_args = dict(truncation=True, padding='max_length', return_tensors='pt')
-
-    def __init__(self, tokenizer: T5TokenizerFast):
-        self.tokenizer = tokenizer
-
-    def __call__(self, texts: List[str], labels: List[str] = None):
-        ret = self.tokenizer(texts, **BatchCollator.tok_args)
-        labels = self.tokenizer(labels, **BatchCollator.tok_args)['input_ids']
-        labels[labels == self.tokenizer.pad_token_id] = -100  # `-100` is ignored in loss
-        ret['labels'] = labels
-        return ret
 
 
 def get_user_str_w_ordinal(user_id: str = None, user_idx: int = None, n_user: int = None):
