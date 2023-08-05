@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from torch.utils.data import DataLoader
-from transformers import PreTrainedTokenizer, AutoTokenizer
+from transformers import PreTrainedTokenizer, AutoTokenizer, PreTrainedModel
 from transformers import Trainer, TrainingArguments, TrainerCallback, get_linear_schedule_with_warmup
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -29,7 +29,7 @@ else:
     from copy import deepcopy
 
     import torch
-    from peft import PromptLearningConfig, PeftModelForSeq2SeqLM
+    from peft import PromptLearningConfig, PeftModel, PeftModelForSeq2SeqLM
     from peft import PeftType, TaskType, MODEL_TYPE_TO_PEFT_MODEL_MAPPING
 
 
@@ -41,7 +41,7 @@ __all__ = [
     'get_user_str_w_ordinal',
     'get_user_test_pbar',
     'PredIdPair', 'GetPredId',
-    'test_user_update_postfix_n_write_df', 'log_n_save_test_results'
+    'test_user_update_postfix_n_write_df', 'MyTester', 'log_n_save_test_results'
 ]
 if is_on_adapter():
     __all__ += ['MyAdapterTrainer']
@@ -531,6 +531,62 @@ def test_user_update_postfix_n_write_df(
 
     df.to_csv(df_out_path)
     return acc
+
+
+class MyTester:
+    def __init__(
+            self, tokenizer: PreTrainedTokenizer, dataset_name: str,
+            batch_size: int = 8, n_user: int = None, logger_fl: Logger = None, eval_output_path: str = None
+    ):
+        self.tokenizer = tokenizer
+        self.dataset_name = dataset_name
+
+        self.batch_size = batch_size
+        self.n_user = n_user
+
+        self.logger_fl = logger_fl
+        self.eval_output_path = eval_output_path
+
+    def __call__(
+            self, model: Union[PreTrainedModel, PeftModel], dataset: ListDataset = None,
+            user_id: str = None, user_idx: int = None,
+
+    ) -> float:
+        label_options = sconfig(f'datasets.{self.dataset_name}.labels')
+        n_sample = len(dataset)
+
+        collate_fn = partial(smart_batching_collate, tokenizer=self.tokenizer)
+        ts_dl = DataLoader(dataset, batch_size=self.batch_size, collate_fn=collate_fn)
+
+        trues, preds = np.empty(n_sample, dtype=int), np.empty(n_sample, dtype=int)
+        user_args = dict(user_id=user_id, user_idx=user_idx, n_user=self.n_user)
+        it = get_user_test_pbar(it=ts_dl, **user_args)
+        d_it = dict(dataset_size=pl.i(len(dataset)))
+        it.set_postfix(d_it)
+
+        ret = None
+        n_ba = len(ts_dl)
+        get_pred = GetPredId(label_options=label_options, logger_fl=self.logger_fl)
+        for i_ba, inputs in enumerate(it):
+            inputs = {k: v for k, v in inputs.items()}
+            inputs.pop('labels')
+            if torch.cuda.is_available():
+                inputs = {k: v.cuda() for k, v in inputs.items()}
+            with torch.no_grad():
+                outputs = model.generate(**inputs, max_new_tokens=128)  # Greedy decoding
+            lst_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+
+            for i, decoded in enumerate(lst_decoded):
+                i_sample = i_ba * self.batch_size + i
+                out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target(), user_id=user_id)
+                preds[i_sample], trues[i_sample] = out.pred, out.true
+
+            if i_ba + 1 == n_ba:  # last iteration
+                ret = test_user_update_postfix_n_write_df(
+                    label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
+                    df_out_path=os_join(self.eval_output_path, f'{uid2u_str(user_id)}.csv')
+                )
+        return ret
 
 
 def log_n_save_test_results(

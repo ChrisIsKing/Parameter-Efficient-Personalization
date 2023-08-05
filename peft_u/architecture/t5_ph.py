@@ -235,7 +235,12 @@ class PHT5ForConditionalGeneration(T5ForConditionalGeneration):
                         # Make sure to freeze Transformers model
                         if transformer_backbone is None:
                             transformer_backbone = module
-        # raise NotImplementedError
+
+    def load_pretrained_ph(self, path: str):
+        if self.insert_encoder_layer:
+            self.encoder.block[-1].load_state_dict(torch.load(path))
+        else:
+            self.p_encoder.load_state_dict(torch.load(path))
 
     # @add_start_docstrings_to_model_forward(T5_INPUTS_DOCSTRING)
     # @replace_return_docstrings(output_type=Seq2SeqLMOutput, config_class=_CONFIG_FOR_DOC)
