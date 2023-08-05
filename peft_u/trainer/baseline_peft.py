@@ -215,7 +215,6 @@ if __name__ == '__main__':
             strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
-            md_load_args = dict(peft_method=method, logger_fl=logger_fl)
 
             tm = Timer()
             # global_tqdm = True
@@ -231,7 +230,7 @@ if __name__ == '__main__':
                 tokenizer=train_util.load_tokenizer(),
                 seed=seed, batch_size=args.batch_size, num_epochs=args.num_epochs,
                 learning_rate=args.learning_rate, weight_decay=args.weight_decay,
-                output_path=output_path
+                output_path=output_path, saver_cls=TrainSaver
             )
             for i, uid in enumerate(it, start=1):
                 if global_tqdm:
@@ -248,9 +247,8 @@ if __name__ == '__main__':
                 #     logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
                 #     continue
 
-                model = load_model(model_name_or_path=model_name_or_path, **md_load_args)
-                saver = TrainSaver(model=model, output_base_path=output_path)
-                trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False, saver=saver)
+                model = load_model(model_name_or_path=model_name_or_path, peft_method=method, logger_fl=logger_fl)
+                trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False)
                 t_e_ = tm_.end()
                 if not global_tqdm:
                     logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')

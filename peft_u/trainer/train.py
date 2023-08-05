@@ -1,18 +1,17 @@
 import json
 import math
 from os.path import join as os_join
-from typing import Tuple, List, Dict, Union, Callable
+from typing import Tuple, Dict, Union, Callable
 from logging import Logger
 from argparse import Namespace
 from functools import partial
-from dataclasses import dataclass
 from typing import List
 from argparse import ArgumentParser
 from dataclasses import dataclass
 
 import numpy as np
 from torch.utils.data import DataLoader
-from transformers import T5TokenizerFast, PreTrainedTokenizer, AutoTokenizer
+from transformers import PreTrainedTokenizer, AutoTokenizer
 from transformers import Trainer, TrainingArguments, TrainerCallback, get_linear_schedule_with_warmup
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -125,7 +124,7 @@ class MyTrainer:
     def __init__(
             self, tokenizer: PreTrainedTokenizer, seed: int = 42,
             batch_size: int = 8, num_epochs: int = 3, learning_rate: float = 2e-5, weight_decay: float = 0.01,
-            output_path: str = None
+            output_path: str = None, saver_cls=None,
     ):
         self.tokenizer = tokenizer
         self.seed = seed
@@ -135,13 +134,14 @@ class MyTrainer:
         self.weight_decay = weight_decay
 
         self.output_path = output_path
+        self.saver_cls = saver_cls
 
     def __call__(
             self, model: torch.nn.Module, dataset: InputEgDataset,
-            user_id: str = None, verbose: bool = False, save_per_epoch: bool = True,
-            saver: Callable[[str], None] = None,
+            user_id: str = None, verbose: bool = False, save_per_epoch: bool = True
     ):
         output_path = os_join(self.output_path, uid2u_str(user_id))
+        saver = self.saver_cls(model=model, output_base_path=output_path)
 
         set_seed(self.seed)
         collate_fn = partial(smart_batching_collate, tokenizer=self.tokenizer)
