@@ -129,48 +129,6 @@ class TrainSaver:
             logger.info(f'Model saved to {pl.i(out)}')
 
 
-def test_single(
-        model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: ListDataset = None, dataset_name: str = None,
-        batch_size: int = 8, user_id: str = None, user_idx: int = None, n_user: int = None,
-        logger_fl: Logger = None, eval_output_path: str = None
-) -> float:
-    label_options = sconfig(f'datasets.{dataset_name}.labels')
-    n_sample = len(dataset)
-
-    collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
-    ts_dl = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn)
-
-    trues, preds = np.empty(n_sample, dtype=int), np.empty(n_sample, dtype=int)
-    user_args = dict(user_id=user_id, user_idx=user_idx, n_user=n_user)
-    it = train_util.get_user_test_pbar(it=ts_dl, **user_args)
-    d_it = dict(dataset_size=pl.i(len(dataset)))
-    it.set_postfix(d_it)
-
-    ret = None
-    n_ba = len(ts_dl)
-    get_pred = train_util.GetPredId(label_options=label_options, logger_fl=logger_fl)
-    for i_ba, inputs in enumerate(it):
-        inputs = {k: v for k, v in inputs.items()}
-        inputs.pop('labels')
-        if torch.cuda.is_available():
-            inputs = {k: v.cuda() for k, v in inputs.items()}
-        with torch.no_grad():
-            outputs = model.generate(**inputs, max_new_tokens=128)  # Greedy decoding
-        lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-
-        for i, decoded in enumerate(lst_decoded):
-            i_sample = i_ba * batch_size + i
-            out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target(), user_id=user_id)
-            preds[i_sample], trues[i_sample] = out.pred, out.true
-
-        if i_ba + 1 == n_ba:  # last iteration
-            ret = train_util.test_user_update_postfix_n_write_df(
-                label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
-                df_out_path=os_join(eval_output_path, f'{uid2u_str(user_id)}.csv')
-            )
-    return ret
-
-
 def _get_dataset_and_users_it(
         dataset_name: str, leakage: bool = False,
         uid_start_from: Union[str, int] = None, uid_end_at: Union[str, int] = None, seed: int = None
@@ -283,10 +241,11 @@ if __name__ == '__main__':
             logger_fl.info(f'Testing PEFT w/ {d_log}...')
 
             tm = Timer()
-            model, tokenizer = None, None
+            model = None
+            tokenizer = train_util.load_tokenizer()
             if zeroshot:  # Load global model for all users
                 load_args = dict(verbose=True, logger_fl=logger_fl)
-                model, tokenizer = load_model(model_name_or_path=model_name_or_path, **load_args)
+                model = load_model(model_name_or_path=model_name_or_path, **load_args)
                 model.eval()
             else:
                 model_name_or_path = model_util.prepend_local_model_path(model_path=model_name_or_path)
@@ -302,6 +261,10 @@ if __name__ == '__main__':
 
             import gc
             accs = dict()
+            tester = train_util.MyTester(
+                tokenizer=tokenizer, dataset_name=dataset_name,
+                batch_size=bsz, n_user=n_user, logger_fl=logger_fl, eval_output_path=eval_output_path
+            )
             for i, uid in enumerate(it, start=1):
                 torch.cuda.empty_cache()
                 ts = ListDataset(dset[uid].test)
@@ -314,10 +277,7 @@ if __name__ == '__main__':
                 #     logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
                 #     continue
 
-                accs[uid] = test_single(
-                    model=model, tokenizer=tokenizer, dataset=ts, batch_size=bsz, dataset_name=dataset_name,
-                    user_id=uid, user_idx=i, n_user=n_user, logger_fl=logger_fl, eval_output_path=eval_output_path
-                )
+                accs[uid] = tester(model=model, dataset=ts, user_id=uid, user_idx=i)
                 model.cpu()  # move to CPU then collect memory, otherwise CUDA OOM error
                 gc.collect()
             out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path)
