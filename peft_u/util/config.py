@@ -89,6 +89,16 @@ config_dict = dict(
             instruction="Please rate whether the following text is funny or not funny. "
                         "Respond 'yes' if you think the text is funny and 'no' if you think the text is not funny."
         ),
+        epic=dict(
+            domain=['humor'],
+            labels=['Ironic', 'Non-ironic'],
+            multi_label=False,
+            instruction="Irony is a figurative language device that conveys that opposite of literal meaning, "
+                        "profiling intentionally a secondary or extended meaning. "
+                        "Please review the following message and reply and indicate if it has the presence of irony. "
+                        "Respond 'Ironic' if the reply if you think the reply is ironic "
+                        "and 'Non-ironic' if you think the reply is not ironic."
+        ),
         subjectivediscourse_response=dict(
             domain=['discourse'],
             labels=[

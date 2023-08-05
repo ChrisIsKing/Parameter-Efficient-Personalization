@@ -10,21 +10,17 @@ from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
-    Seq2SeqTrainingArguments,
-    Seq2SeqTrainer,
-    get_linear_schedule_with_warmup,
     PreTrainedTokenizer
 )
 from peft import get_peft_model, PeftConfig, PeftModel, PeftModelForSeq2SeqLM
 from peft import TaskType, LoraConfig,  PrefixTuningConfig, PromptEncoderConfig, PromptTuningConfig
 from peft import PromptTuningInit, PromptEncoderReparameterizationType
 from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
 
 from stefutil import *
 from peft_u.util import *
 import peft_u.util.models as model_util
-import peft_u.util.train as train_util
+import peft_u.trainer.train as train_util
 from peft_u.preprocess.load_dataset import *
 from peft_u.trainer import HF_MODEL_NAME, get_arg_parser
 
@@ -42,19 +38,14 @@ def parse_args():
     return out.parser.parse_args()
 
 
-def load_model_n_tokenizer(
+def load_model(
         model_name_or_path: str = HF_MODEL_NAME, peft_method: str = DEFAULT_PEFT_METHOD,
         verbose: bool = False, logger_fl: Logger = None
-) -> Tuple[PeftModelForSeq2SeqLM, PreTrainedTokenizer]:
-    cache_dir = model_util.get_hf_model_cache_dir()
-    if verbose:
-        logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
-    if logger_fl:
-        logger_fl.info(f'Loading model {model_name_or_path} with cache dir {cache_dir}... ')
+) -> PeftModelForSeq2SeqLM:
+    log = model_util.LoadModelLogging(logger=logger, logger_fl=logger_fl, verbose=verbose)
+    cache_dir = log.get_n_log_cache_dir(model_name_or_path=model_name_or_path)
 
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-    tokenizer.model_max_length = 512
 
     if peft_method is not None:
         ca.check_mismatch('PEFT method', peft_method, PEFT_METHODS)
@@ -103,154 +94,10 @@ def load_model_n_tokenizer(
                 )
         model = get_peft_model(model, peft_config)
 
-    model_meta = get_model_meta(model)
-    if verbose:
-        logger.info(f'Model info: {pl.i(model_meta)}')
-    if logger_fl:
-        logger_fl.info(f'Model info: {model_meta}')
-
+    log.get_n_log_model_meta(model=model)
     if torch.cuda.is_available():
         model.cuda()
-    return model, tokenizer
-
-
-def smart_batching_collate(batch, tokenizer):
-    """
-    Collate function for PyTorch DataLoader
-    """
-    return train_util.BatchCollator(tokenizer)(
-        texts=[example.process_template() for example in batch],
-        labels=[example.process_target() for example in batch]
-    )
-
-
-def _get_dataset_sizes(dataset: InputEgDataset):
-    tr, vl, ts = dataset.train, dataset.val, dataset.test
-    return dict(train_sz=len(tr), val_sz=len(vl), test_sz=len(ts))
-
-
-def train_single(
-        model: PeftModel, tokenizer: PreTrainedTokenizer, dataset: InputEgDataset,
-        seed: int = 42,
-        batch_size: int = 8, num_epochs: int = 3, learning_rate: float = 2e-5, weight_decay: float = 0.01,
-        output_path: str = None, user_id: str = None, verbose: bool = False, save_per_epoch: bool = True
-):
-    output_path = os_join(output_path, uid2u_str(user_id))
-
-    def _save(dir_nm: str):
-        model.save_pretrained(os_join(output_path, dir_nm))
-        # tokenizer.save_pretrained(os_join(output_path, dir_nm))
-        if verbose:
-            logger.info(f'Model and tokenizer saved to {pl.i(output_path)}')
-
-    set_seed(seed)
-    collate_fn = partial(smart_batching_collate, tokenizer=tokenizer)
-    tr, vl, ts = dataset.train, dataset.val, dataset.test
-
-    train_dataloader = DataLoader(ListDataset(tr), batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-    val_dataloader = DataLoader(ListDataset(vl), batch_size=batch_size, collate_fn=collate_fn)
-
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-
-    n_step_per_epoch = len(train_dataloader)
-    n_step = (n_step_per_epoch * num_epochs)
-    lr_scheduler = get_linear_schedule_with_warmup(
-        optimizer=optimizer,
-        num_warmup_steps=int(n_step * 0.1),
-        num_training_steps=n_step,
-    )
-
-    logger_fl = get_logger(f'PEFT Train User-{user_id}', kind='file-write', file_path=os_join(output_path, 'train.log'))
-    tb_writer = SummaryWriter(os_join(output_path, f'tensorboard'))
-    d_log = _get_dataset_sizes(dataset)
-    # if verbose:
-    logger.info(f'Dataset sizes: {pl.i(d_log)}')
-    logger_fl.info(f'Dataset sizes: {d_log}')
-
-    pret = MlPrettier(ref=dict(step=n_step_per_epoch, epoch=num_epochs), metric_keys=['cls_acc'])
-    ls = LogStep(prettier=pret, logger=logger, file_logger=logger_fl, tb_writer=tb_writer)
-
-    best_val_loss = float('inf')
-
-    for epoch in range(1, num_epochs+1):
-        model.train()
-        total_tr_loss = 0
-
-        tr_desc = f'Train Epoch {pl.i(epoch)}/{pl.i(num_epochs)}'
-        it = tqdm(enumerate(train_dataloader, start=1), desc=tr_desc, total=n_step_per_epoch)
-        for step, batch in it:
-            if torch.cuda.is_available():
-                batch = {k: v.cuda() for k, v in batch.items()}
-            outputs = model(**batch)
-            loss = outputs.loss
-            loss_item = loss.detach().item()
-            total_tr_loss += loss_item
-            loss.backward()
-            optimizer.step()
-            lr_scheduler.step()
-            optimizer.zero_grad()
-
-            glob_step, lr = (epoch-1) * n_step_per_epoch + step, optimizer.param_groups[0]['lr']
-            d_log = dict(epoch=epoch, step=glob_step, lr=lr, loss=loss_item)
-            ls.pbar = it
-            ls(d_log, training=True, to_console=False)
-
-        model.eval()
-        cum_eval_loss = 0
-        eval_preds = []
-        vl_desc = f'Eval Epoch {pl.i(epoch)}/{pl.i(num_epochs)}'
-
-        n_vl_step = len(val_dataloader)
-        it = tqdm(enumerate(val_dataloader), desc=vl_desc, total=n_vl_step)
-
-        eval_epoch_loss = None
-        for step, batch in it:
-            if torch.cuda.is_available():
-                batch = {k: v.cuda() for k, v in batch.items()}
-            with torch.no_grad():
-                outputs = model(**batch)
-            cum_eval_loss += outputs.loss.detach().item()
-
-            decoded = tokenizer.batch_decode(
-                torch.argmax(outputs.logits, -1).detach().cpu().numpy(), skip_special_tokens=True
-            )
-            eval_preds.extend(decoded)
-
-            if step + 1 == n_vl_step:  # last iteration
-                eval_epoch_loss = cum_eval_loss / len(val_dataloader)
-                eval_ppl = np.exp(eval_epoch_loss)
-
-                n_correct = 0  # Eval classification accuracy
-                n = 0
-                for pred, true in zip(eval_preds, vl):
-                    # by empirical observation, the forward-pass tensors seems to repeat the single prediction label
-                    #  => an easy solution is just consider the first word as prediction;
-                    #  TODO: better & still fast ways?
-                    pred = pred.split(' ')[0].strip()
-                    labels = [lb.strip() for lb in true.process_target().split(', ')]
-                    if pred in labels:
-                        n_correct += 1
-                    n += 1
-
-                train_epoch_loss = total_tr_loss / len(train_dataloader)
-                d_log = dict(
-                    epoch=epoch, eval_loss=eval_epoch_loss, eval_ppl=eval_ppl, eval_cls_acc=n_correct/n,
-                    train_epoch_loss=train_epoch_loss, train_ppl=np.exp(train_epoch_loss)
-                )
-                ls.pbar = it
-                ls(d_log, training=False, to_console=False)
-        assert eval_epoch_loss is not None  # sanity check
-
-        if save_per_epoch:
-            _save(f'epoch_{epoch:02d}')
-        if eval_epoch_loss < best_val_loss:
-            best_val_loss = eval_epoch_loss
-            _save('trained')
-
-            best_val_loss_ = round(best_val_loss, 4)
-            if verbose:
-                logger.info(f'Best model saved w/ eval loss {pl.i(best_val_loss_)}')
-            logger_fl.info(f'Best model saved w/ eval loss {best_val_loss_}')
+    return model
 
 
 def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple[PeftModel, PreTrainedTokenizer]:
@@ -267,6 +114,19 @@ def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple
         model = model.cuda()
     model.eval()
     return model, tokenizer
+
+
+class TrainSaver:
+    def __init__(self, model: PeftModel, output_base_path: str = None, verbose: bool = False):
+        self.model = model
+        self.output_base_path = output_base_path
+        self.verbose = verbose
+
+    def __call__(self, output_dir_nm: str):
+        out = os_join(self.output_base_path, output_dir_nm)
+        self.model.save_pretrained(out)
+        if self.verbose:
+            logger.info(f'Model saved to {pl.i(out)}')
 
 
 def test_single(
@@ -350,9 +210,9 @@ if __name__ == '__main__':
             # strt = 1705   # `cockamamie.p_tuning`
             # strt = 1731  # `cockamamie.prompt_tuning`
             # strt = 366  # `wikidetox`
-            strt = 2687  # wikidetox.p_tuning`
+            # strt = 2687  # wikidetox.p_tuning`
             # strt = '44590228'  # `unhealthyconversations`
-            # strt = None
+            strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
             md_load_args = dict(peft_method=method, logger_fl=logger_fl)
@@ -367,9 +227,15 @@ if __name__ == '__main__':
             if global_tqdm:
                 it = tqdm(it, desc=f'Training on {pl.i(dataset_name)}')
 
+            trainer = train_util.MyTrainer(
+                tokenizer=train_util.load_tokenizer(),
+                seed=seed, batch_size=args.batch_size, num_epochs=args.num_epochs,
+                learning_rate=args.learning_rate, weight_decay=args.weight_decay,
+                output_path=output_path
+            )
             for i, uid in enumerate(it, start=1):
                 if global_tqdm:
-                    d_log = dict(user=uid) | _get_dataset_sizes(dset[uid])
+                    d_log = dict(user=uid) | get_dataset_sizes(dset[uid])
                     it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
                 else:
                     user_str_ordinal = train_util.get_user_str_w_ordinal(user_id=uid, user_idx=i, n_user=n_user)
@@ -382,12 +248,9 @@ if __name__ == '__main__':
                 #     logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
                 #     continue
 
-                model, tokenizer = load_model_n_tokenizer(model_name_or_path, **md_load_args)
-                train_single(
-                    model=model, tokenizer=tokenizer, dataset=dset[uid], seed=seed,
-                    batch_size=args.batch_size, num_epochs=args.num_epochs, learning_rate=args.learning_rate,
-                    weight_decay=args.weight_decay, output_path=output_path, user_id=uid, save_per_epoch=False
-                )
+                model = load_model(model_name_or_path=model_name_or_path, **md_load_args)
+                saver = TrainSaver(model=model, output_base_path=output_path)
+                trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False, saver=saver)
                 t_e_ = tm_.end()
                 if not global_tqdm:
                     logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
@@ -425,7 +288,7 @@ if __name__ == '__main__':
             model, tokenizer = None, None
             if zeroshot:  # Load global model for all users
                 load_args = dict(verbose=True, logger_fl=logger_fl)
-                model, tokenizer = load_model_n_tokenizer(model_name_or_path=model_name_or_path, **load_args)
+                model, tokenizer = load_model(model_name_or_path=model_name_or_path, **load_args)
                 model.eval()
             else:
                 model_name_or_path = model_util.prepend_local_model_path(model_path=model_name_or_path)
@@ -473,7 +336,7 @@ if __name__ == '__main__':
         # method = 'prefix'
         # method = 'p_tuning'
         method = 'prompt_tuning'
-        model, tokenizer = load_model_n_tokenizer(model_name_or_path=md_nm, peft_method=method)
+        model, tokenizer = load_model(model_name_or_path=md_nm, peft_method=method)
         model.eval()
         model.peft_config['default'].inference_mode = True
         mic(model.peft_config)
@@ -494,7 +357,7 @@ if __name__ == '__main__':
         # method = 'prefix'
         # method = 'p_tuning'
         method = 'prompt_tuning'
-        model, tokenizer = load_model_n_tokenizer(HF_MODEL_NAME, peft_method=method)
+        model, tokenizer = load_model(HF_MODEL_NAME, peft_method=method)
         mic(get_trainable_param_meta(model, fmt='int'))
     # check_learnable_param()
 

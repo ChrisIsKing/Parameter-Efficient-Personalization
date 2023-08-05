@@ -1,4 +1,3 @@
-import os
 from os.path import join as os_join
 from collections import defaultdict
 
@@ -29,7 +28,7 @@ if __name__ == '__main__':
     for i, row in tqdm(df.iterrows(), desc='Converting data', total=len(df)):
         post_id, user_id = row.id_original, row.user
         # TODO: each sample is a text-pair, how to handle?
-        text = f'Parent text: {row.parent_text}\n\nReply text: {row.text}'
+        text = f'message: "{row.parent_text}"\n\nreply: "{row.text}"'
         label = label_map[row.label]
         user_data[user_id][post_id] = dict(text=text, label=[label])
         # mic(row)
