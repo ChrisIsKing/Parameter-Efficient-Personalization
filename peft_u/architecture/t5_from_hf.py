@@ -20,7 +20,7 @@ from torch.utils.checkpoint import checkpoint
 assert transformers.__version__ == '4.29.1'
 
 
-__all__ = ['T5Stack']
+__all__ = ['T5Block', 'T5LayerNorm', 'T5Stack']
 
 
 logger = logging.get_logger(__name__)

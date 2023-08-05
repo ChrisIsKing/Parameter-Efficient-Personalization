@@ -12,7 +12,7 @@ from torch.nn import CrossEntropyLoss
 from transformers import T5Config, T5ForConditionalGeneration, PreTrainedModel
 from transformers.utils import add_start_docstrings_to_model_forward, replace_return_docstrings
 from transformers.modeling_outputs import Seq2SeqLMOutput, BaseModelOutput
-from .t5_from_hf import T5Stack
+from .t5_from_hf import *
 
 from stefutil import *
 
@@ -125,6 +125,43 @@ num_heads)`.
 """
 
 
+INSERT_ENCODER_LAYER = True  # otherwise, insert additional encoder stack
+
+
+class PHT5Stack(T5Stack):
+    """
+    Insert an additional encoder layer
+    """
+    def __init__(self, config: T5Config, embed_tokens: nn.Embedding):
+        # ========================== Begin of modified ==========================
+        # super().__init__(config)
+        # one final layer, to optimize from scratch
+        config = copy.deepcopy(config)
+        config.num_layers += 1
+        super(T5Stack, self).__init__(config)  # mimic the behavior of `T5Stack.__init__`
+        # ========================== End of modified ==========================
+
+        self.embed_tokens = embed_tokens
+        self.is_decoder = config.is_decoder
+
+        self.block = nn.ModuleList(
+            # ========================== Begin of modified ==========================
+            [T5Block(config, has_relative_attention_bias=bool(i == 0)) for i in range(config.num_layers)]
+            # one more layer automatically added
+            # [T5Block(config, has_relative_attention_bias=bool(i == 0)) for i in range(config.num_layers+1)]
+            # ========================== End of modified ==========================
+        )
+        self.final_layer_norm = T5LayerNorm(config.d_model, eps=config.layer_norm_epsilon)
+        self.dropout = nn.Dropout(config.dropout_rate)
+
+        # Initialize weights and apply final processing
+        self.post_init()
+        # Model parallel
+        self.model_parallel = False
+        self.device_map = None
+        self.gradient_checkpointing = False
+
+
 class PHT5ForConditionalGeneration(T5ForConditionalGeneration):
     def __init__(self, config: T5Config):
         super().__init__(config)
@@ -136,16 +173,23 @@ class PHT5ForConditionalGeneration(T5ForConditionalGeneration):
         encoder_config.is_decoder = False
         encoder_config.use_cache = False
         encoder_config.is_encoder_decoder = False
-        self.encoder = T5Stack(encoder_config, self.shared)
+        # ========================== Begin of modified ==========================
+        # self.encoder = T5Stack(encoder_config, self.shared)
+        if INSERT_ENCODER_LAYER:
+            self.encoder = PHT5Stack(encoder_config, self.shared)
+        else:
+            self.encoder = T5Stack(encoder_config, self.shared)
+        # ========================== End of modified ==========================
 
         # ========================== Begin of added ==========================
-        # Insert an additional encoder layer
-        # Have to modify original init code cos need `post_init` call
-        p_encoder_config = copy.deepcopy(config)
-        p_encoder_config.num_layers = 1
-        self.p_encoder = T5Stack(p_encoder_config, self.shared)
-        # mic(encoder_config, p_encoder_config)
-        # raise NotImplementedError
+        if not INSERT_ENCODER_LAYER:
+            # Insert an additional encoder layer
+            # Have to modify original init code cos need `post_init` call
+            p_encoder_config = copy.deepcopy(config)
+            p_encoder_config.num_layers = 1
+            self.p_encoder = T5Stack(p_encoder_config, self.shared)
+            # mic(encoder_config, p_encoder_config)
+            # raise NotImplementedError
         # ========================== End of added ==========================
 
         decoder_config = copy.deepcopy(config)
@@ -168,17 +212,30 @@ class PHT5ForConditionalGeneration(T5ForConditionalGeneration):
         modified from `peft.PeftModel::_setup_prompt_encoder`
         """
         transformer_backbone = None
-        for name, module in self.named_children():
-            # mic(name, isinstance(module, PreTrainedModel))
-            if name != 'p_encoder':  # ignore the personalized head, see `__init__`
-                # mic(name + ' is frozen')
-                for param in module.parameters():
-                    param.requires_grad = False
-                # TODO: not sure what this part does, the T5 encoder & decoder stacks passes
-                if isinstance(module, PreTrainedModel):
-                    # Make sure to freeze Transformers model
-                    if transformer_backbone is None:
-                        transformer_backbone = module
+        if INSERT_ENCODER_LAYER:
+            ph_block_idx = self.config.num_layers
+            ph_nm = f'encoder.block.{ph_block_idx}'
+            for name, module in self.named_parameters():
+                # mic(name)
+                if ph_nm in name:
+                    # mic(name + ' is frozen')
+                    module.requires_grad = True
+                else:
+                    module.requires_grad = False
+            # raise NotImplementedError
+        else:  # TODO: loss.backward() not working
+            for name, module in self.named_children():
+                mic(name)
+                # mic(name, isinstance(module, PreTrainedModel))
+                if name != 'p_encoder':  # ignore the personalized head, see `__init__`
+                    # mic(name + ' is frozen')
+                    for param in module.parameters():
+                        param.requires_grad = False
+                    # TODO: not sure what this part does, the T5 encoder & decoder stacks passes
+                    if isinstance(module, PreTrainedModel):
+                        # Make sure to freeze Transformers model
+                        if transformer_backbone is None:
+                            transformer_backbone = module
         # raise NotImplementedError
 
     # @add_start_docstrings_to_model_forward(T5_INPUTS_DOCSTRING)
@@ -251,7 +308,7 @@ class PHT5ForConditionalGeneration(T5ForConditionalGeneration):
                 decoder_attention_mask = decoder_attention_mask.to(self.decoder.first_device)
 
         # ========================== Begin of added ==========================
-        # TODO:
+        # TODO: if not INSERT_ENCODER_LAYER:
         # ========================== End of added ==========================
 
         # Decode
