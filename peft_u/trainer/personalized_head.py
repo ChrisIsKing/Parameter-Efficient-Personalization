@@ -68,6 +68,7 @@ class TrainSaver:
 
 if __name__ == '__main__':
     check_not_on_adapter()
+    reduce_hf_logging()
 
     def try_load_model():
         model = PHT5ForConditionalGeneration.from_pretrained(HF_MODEL_NAME)
@@ -86,12 +87,11 @@ if __name__ == '__main__':
             dataset_name, leakage = args.dataset_name, args.leakage
             seed = args.seed
             output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='PH')
-            mic(output_path)
 
             dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed)
             strt = None
             it = iter_users(dataset=dset, start_from=strt)
-            it = it[:4]  # TODO: debugging
+            # it = it[:4]  # TODO: debugging
 
             n_user = len(it)
             logger.info(f'Training on users {pl.i(it)}... ')
@@ -141,7 +141,7 @@ if __name__ == '__main__':
 
             dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed)
             it = iter_users(dataset=dset)
-            it = it[:4]  # TODO: debugging
+            # it = it[:4]  # TODO: debugging
             n_user = len(it)
             d_log = dict(users=it, label_options=sconfig(f'datasets.{dataset_name}.labels'))
             logger.info(f'Testing w/ {pl.i(d_log)}...')
