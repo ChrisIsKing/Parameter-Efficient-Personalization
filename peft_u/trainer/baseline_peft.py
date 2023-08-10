@@ -59,7 +59,7 @@ def load_model(
         if peft_method == 'lora':
             peft_config = LoraConfig(**config_d, r=1 if _same_param_exp else 8, lora_alpha=32, lora_dropout=0.1)
         else:
-            _encoder_insertion_only = False  # for prompting in encoder input only
+            _encoder_insertion_only = True  # for prompting in encoder input only
             config_d['num_virtual_tokens'] = 20
             if peft_method == 'prefix':
                 if _same_param_exp:
@@ -244,7 +244,7 @@ if __name__ == '__main__':
             model = None
             tokenizer = train_util.load_tokenizer()
             if zeroshot:  # Load global model for all users
-                load_args = dict(verbose=True, logger_fl=logger_fl)
+                load_args = dict(peft_method=None, verbose=True, logger_fl=logger_fl)
                 model = load_model(model_name_or_path=model_name_or_path, **load_args)
                 model.eval()
             else:
@@ -278,8 +278,9 @@ if __name__ == '__main__':
                 #     continue
 
                 accs[uid] = tester(model=model, dataset=ts, user_id=uid, user_idx=i)
-                model.cpu()  # move to CPU then collect memory, otherwise CUDA OOM error
-                gc.collect()
+                if not zeroshot:
+                    model.cpu()  # move to CPU then collect memory, otherwise CUDA OOM error
+                    gc.collect()
             out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path)
             train_util.log_n_save_test_results(dataset_name=dataset_name, **out_args)
 
