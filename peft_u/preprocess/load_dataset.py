@@ -166,6 +166,8 @@ def load_dataset_with_prompts(
 
 
 _USER_IDS = Union[List[str], List[int]]
+# For `EPIC`, user ids are hex chars
+hex_pattern = re.compile(r'^[0-9a-f]+$')
 # For `SubjectiveDiscourse`, user ids are like `worker_50`
 sub_dis_pattern = re.compile(r'^worker_(?P<id>\d+)$')
 
@@ -175,8 +177,12 @@ def sort_user_ids(uids: _USER_IDS) -> _USER_IDS:
         return sorted(uids)
     else:
         assert all(isinstance(uid, str) for uid in uids)
+
         if all(uid.isdigit() for uid in uids):
             sort_fn = int
+        elif all(hex_pattern.match(uid) is not None for uid in uids):
+            def sort_fn(x):
+                return int(x, 16)
         else:
             def sort_fn(x):
                 match = sub_dis_pattern.match(x)

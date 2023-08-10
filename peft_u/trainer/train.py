@@ -10,6 +10,7 @@ from argparse import ArgumentParser
 from dataclasses import dataclass
 
 import numpy as np
+import torch
 from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizer, AutoTokenizer, PreTrainedModel
 from transformers import Trainer, TrainingArguments, TrainerCallback, get_linear_schedule_with_warmup
@@ -24,11 +25,12 @@ import peft_u.util.models as model_util
 
 if is_on_adapter():
     from transformers import AdapterTrainer
+
+    PeftModel = None  # so that code runs for type hinting
 else:
     import warnings
     from copy import deepcopy
 
-    import torch
     from peft import PromptLearningConfig, PeftModel, PeftModelForSeq2SeqLM
     from peft import PeftType, TaskType, MODEL_TYPE_TO_PEFT_MODEL_MAPPING
 
