@@ -340,7 +340,7 @@ else:
                         # ========================== Begin of modified ==========================
                         # raise NotImplementedError
 
-                        use_peft_implementation = False
+                        use_peft_implementation = True
                         if use_peft_implementation:
                             assert peft_config.num_transformer_submodules == 1
 
