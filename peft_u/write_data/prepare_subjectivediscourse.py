@@ -2,18 +2,22 @@ import os
 import ast
 from os.path import join as os_join
 from collections import defaultdict
-
+from argparse import ArgumentParser
 from tqdm import tqdm
-
 from stefutil import *
 from peft_u.util import *
 from peft_u.preprocess.convert_data_format import *
 
+def parse_args():
+    parser = ArgumentParser()
+    parser.add_argument('--output_dir', '-o', default=None, type=str, help='Path to output directory')
+    return parser.parse_args()
 
 logger = get_logger('Subjective Discourse Write')
 
 
 if __name__ == '__main__':
+    args = parse_args()
     def run(label_key: str = 'response'):
         ca.check_mismatch('Classification type', label_key, ['response', 'question_sentiment', 'response_sentiment'])
 
@@ -59,7 +63,10 @@ if __name__ == '__main__':
                     label = [label_map(r_sentiments[i])]
 
                 user_data[user][post_id] = dict(text=text, label=label)
-        dset_out_path = os_join(u.proj_path, u.dset_dir, f'{dnm}_{label_key}')
+        if args.output_dir is not None:
+            dset_out_path = os_join(args.output_dir, dnm, f'{dnm}_{label_key}')
+        else:
+            dset_out_path = os_join(u.proj_path, u.dset_dir, f'{dnm}_{label_key}')
         os.makedirs(dset_out_path, exist_ok=True)
         save_datasets(data=user_data, base_path=dset_out_path)
         logger.info(pl.i({'Label Set': sorted(label_set), 'Sentiment Set': sorted(sentiment_set)}))

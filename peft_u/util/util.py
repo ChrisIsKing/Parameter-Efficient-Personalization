@@ -13,7 +13,7 @@ from peft_u.util.project_paths import BASE_PATH, PROJ_DIR, PKG_NM, DSET_DIR, MOD
 
 __all__ = [
     'sconfig', 'u', 'save_fig',
-    'set_seed',
+    'set_seed', 'make_dirs',
     'on_great_lakes', 'get_base_path',
     'uid2u_str',
     'is_on_adapter', 'check_not_on_adapter', 'check_on_adapter'
@@ -27,6 +27,12 @@ sconfig = StefConfig(config_file=os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', 'c
 u = StefUtil(base_path=BASE_PATH, project_dir=PROJ_DIR, package_name=PKG_NM, dataset_dir=DSET_DIR, model_dir=MODEL_DIR)
 save_fig = u.save_fig
 
+def make_dirs(path):
+    """
+    Make the directory if it does not exist.
+    """
+    if not os.path.exists(path):
+        os.makedirs(path)
 
 def set_seed(seed):
     """
