@@ -1,10 +1,14 @@
 import json
 from os.path import join as os_join
 from collections import Counter, defaultdict
-
+from argparse import ArgumentParser
 from peft_u.util import *
 from peft_u.preprocess.convert_data_format import *
 
+def parse_args():
+    parser = ArgumentParser()
+    parser.add_argument('--output_dir', '-o', default=None, type=str, help='Path to output directory')
+    return parser.parse_args()
 
 def _most_common(lst, tie_breaker: str = None):
     """
@@ -117,6 +121,11 @@ if __name__ == '__main__':
     from stefutil import *
 
     def run():
+        args = parse_args()
+        if args.output_dir is not None:
+            output_dir = os_join(args.output_dir, 'hatexplain')
+            make_dirs(output_dir)
+
         # Labels: [`normal`, `hatespeech`, `offensive`]
         dset_base_path = os_join(u.proj_path, u.dset_dir, 'hatexplain')
 
@@ -127,6 +136,6 @@ if __name__ == '__main__':
 
         user_data, normal_examples, global_examples = prepare_data(data, test_ids)
 
-        save_datasets(data=user_data, base_path=dset_base_path)
+        save_datasets(data=user_data, base_path=output_dir if args.output_dir is not None else dset_base_path)
         mic(data2label_meta(data=user_data))
     run()
