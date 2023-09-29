@@ -70,10 +70,10 @@ def get_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> T5TokenizerFast:
 
 
 def load_dataset(
-        dataset_name: str = None, leakage: bool = None, seed: int = None, load_users_args: Dict[str, Any] = None,
+        dataset_name: str = None, dataset_path: str = None, leakage: bool = None, seed: int = None, load_users_args: Dict[str, Any] = None,
         tokenizer: T5TokenizerFast = None, tokenize: bool = True, **kwargs
 ) -> Tuple[Dict[str, DatasetDict], List[str]]:
-    dsets = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed)
+    dsets = load_dataset_with_prompts(dataset_name=dataset_name, dataset_path=dataset_path, leakage=leakage, seed=seed)
 
     user_ids = iter_users(dataset=dsets, **(load_users_args or dict()))
     n_original_user, n_user = len(dsets), len(user_ids)
@@ -209,7 +209,7 @@ if __name__ == '__main__':
         cmd = args.mode
         if cmd == 'train':
             model_name_or_path, method = args.model, args.method
-            dataset_name, leakage = args.dataset_name, args.leakage
+            dataset_name, leakage, dataset_path = args.dataset_name, args.leakage, args.dataset_path
             seed = args.seed
             output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='adapter')
 
@@ -266,7 +266,7 @@ if __name__ == '__main__':
         else:
             assert cmd == 'test'
             model_name_or_path = args.model
-            dataset_name, leakage = args.dataset_name, args.leakage
+            dataset_name, leakage, dataset_path = args.dataset_name, args.leakage, args.dataset_path
             bsz = args.batch_size
             seed = args.seed
 

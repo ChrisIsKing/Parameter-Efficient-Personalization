@@ -62,6 +62,7 @@ dataset_names = list(sconfig('datasets'))
 def _add_args(parser: ArgumentParser) -> ArgumentParser:
     parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
     parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
+    parser.add_argument("--dataset_path", type=str, required=False, default=None)
     parser.add_argument("--leakage", type=str, required=False, default=True)
     parser.add_argument("--seed", type=int, required=False, default=42)
     parser.add_argument("--batch_size", type=int, required=False, default=8)
@@ -92,14 +93,16 @@ def get_arg_parser(default_method: str = None, method_choices: List[str] = None,
     return ArgParser(parser=parser, train_parser=train_parser, test_parser=_add_args(test_parser))
 
 
-def load_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> PreTrainedTokenizer:
+def load_tokenizer(model_name_or_path: str = HF_MODEL_NAME, pad_token: dict = None) -> PreTrainedTokenizer:
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    if pad_token is not None:
+        tokenizer.add_special_tokens({"pad_token": pad_token})
     tokenizer.model_max_length = 512
     return tokenizer
 
 
 class BatchCollator:
-    tok_args = dict(truncation=True, padding='max_length', return_tensors='pt')
+    tok_args = dict(truncation=True, padding='max_length', return_tensors='pt', return_token_type_ids=False)
 
     def __init__(self, tokenizer: PreTrainedTokenizer):
         self.tokenizer = tokenizer
@@ -577,6 +580,7 @@ class MyTester:
             with torch.no_grad():
                 outputs = model.generate(**inputs, max_new_tokens=128)  # Greedy decoding
             lst_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            # import pdb; pdb.set_trace()
 
             for i, decoded in enumerate(lst_decoded):
                 i_sample = i_ba * self.batch_size + i

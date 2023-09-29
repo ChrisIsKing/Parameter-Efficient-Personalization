@@ -79,10 +79,13 @@ class ListDataset(Dataset):
         return len(self.lst)
 
 
-def _load_dataset(dataset_name: str = None, leakage: bool = False) -> PersonalizedDataset:
+def _load_dataset(dataset_name: str = None, leakage: bool = False, dataset_path: str = None) -> PersonalizedDataset:
     leak_str = 'leaked' if leakage else 'no_leak'
     data_dir_nm = os_join(dataset_name, f'user_data_{leak_str}.json')
-    data_path = os_join(u.proj_path, u.dset_dir, data_dir_nm)
+    if dataset_path is None:
+        data_path = os_join(u.proj_path, u.dset_dir, data_dir_nm)
+    else:
+        data_path = os_join(dataset_path, data_dir_nm)
 
     d_log = dict(dataset_name=dataset_name, leakage=leakage, path=data_path)
     logger.info(f'Loading data w/ {pl.i(d_log)}...')
@@ -92,7 +95,7 @@ def _load_dataset(dataset_name: str = None, leakage: bool = False) -> Personaliz
 
 
 def load_dataset_with_prompts(
-        dataset_name: str, leakage: bool = False,
+        dataset_name: str, dataset_path: str = None, leakage: bool = False,
         example_count: int = 1, max_example_count: int = 3, per_user: bool = True, seed: int = 42
 ) -> Union[InputEgDataset, Dict[str, InputEgDataset]]:
     """
@@ -108,7 +111,10 @@ def load_dataset_with_prompts(
     """
     ret = dict()
     instruction = sconfig(f'datasets.{dataset_name}.instruction')
-    dset = _load_dataset(dataset_name=dataset_name, leakage=leakage)
+    if dataset_path is None:
+        dset = _load_dataset(dataset_name=dataset_name, leakage=leakage)
+    else:
+        dset = _load_dataset(dataset_name=dataset_name, leakage=leakage, dataset_path=dataset_path)
 
     for uid, dset_ in dset.items():
         def split2label_options(split: str) -> List[str]:
