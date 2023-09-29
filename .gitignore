@@ -9,3 +9,4 @@ __MACOSX
 results
 models/
 test-lang.py
+eval/

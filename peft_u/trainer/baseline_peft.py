@@ -10,7 +10,9 @@ from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
-    PreTrainedTokenizer
+    PreTrainedTokenizer,
+    AutoModelForCausalLM,
+    AutoConfig
 )
 from peft import get_peft_model, PeftConfig, PeftModel, PeftModelForSeq2SeqLM
 from peft import TaskType, LoraConfig,  PrefixTuningConfig, PromptEncoderConfig, PromptTuningConfig
@@ -29,6 +31,7 @@ logger = get_logger('PEFT Baseline')
 
 
 PEFT_METHODS = ["lora", "prefix", "p_tuning", "prompt_tuning"]
+CAUSAL_LM = ["llama"]
 DEFAULT_PEFT_METHOD = 'lora'
 
 
@@ -45,7 +48,12 @@ def load_model(
     log = model_util.LoadModelLogging(logger=logger, logger_fl=logger_fl, verbose=verbose)
     cache_dir = log.get_n_log_cache_dir(model_name_or_path=model_name_or_path)
 
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
+    config = AutoConfig.from_pretrained(model_name_or_path)
+    if config.model_type in CAUSAL_LM:
+        model = AutoModelForCausalLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
+        model.resize_token_embeddings(model.config.vocab_size + 1)
+    else:
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
 
     if peft_method is not None:
         ca.check_mismatch('PEFT method', peft_method, PEFT_METHODS)
@@ -130,12 +138,12 @@ class TrainSaver:
 
 
 def _get_dataset_and_users_it(
-        dataset_name: str, leakage: bool = False,
+        dataset_name: str, dataset_path: str = None, leakage: bool = False,
         uid_start_from: Union[str, int] = None, uid_end_at: Union[str, int] = None, seed: int = None
 ) -> Tuple[Dict[str, InputEgDataset], List[str]]:
     # from peft_u._dset_uid_too_small import uid_too_small
 
-    dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed)
+    dset = load_dataset_with_prompts(dataset_name=dataset_name, dataset_path=dataset_path, leakage=leakage, seed=seed)
 
     filt = None
     # if dataset_name in uid_too_small:
@@ -155,7 +163,7 @@ if __name__ == '__main__':
         cmd = args.mode
         if cmd == 'train':
             model_name_or_path, method = args.model, args.method
-            dataset_name, leakage = args.dataset_name, args.leakage
+            dataset_name, leakage, dataset_path = args.dataset_name, args.leakage, args.dataset_path
             seed = args.seed
             output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='peft')
 
@@ -171,7 +179,7 @@ if __name__ == '__main__':
             # strt = 2687  # wikidetox.p_tuning`
             # strt = '44590228'  # `unhealthyconversations`
             strt = None
-            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
+            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed, dataset_path=dataset_path)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
 
             tm = Timer()
@@ -217,7 +225,7 @@ if __name__ == '__main__':
         else:
             assert cmd == 'test'
             model_name_or_path = args.model
-            dataset_name, leakage = args.dataset_name, args.leakage
+            dataset_name, leakage, dataset_path = args.dataset_name, args.leakage, args.dataset_path
             bsz = args.batch_size
             seed = args.seed
             zeroshot = args.zeroshot
@@ -242,7 +250,7 @@ if __name__ == '__main__':
 
             tm = Timer()
             model = None
-            tokenizer = train_util.load_tokenizer()
+            
             if zeroshot:  # Load global model for all users
                 load_args = dict(peft_method=None, verbose=True, logger_fl=logger_fl)
                 model = load_model(model_name_or_path=model_name_or_path, **load_args)
@@ -250,9 +258,16 @@ if __name__ == '__main__':
             else:
                 model_name_or_path = model_util.prepend_local_model_path(model_path=model_name_or_path)
 
+            if model:
+                if model.config.model_type == "llama":
+                    tokenizer = train_util.load_tokenizer(model_name_or_path=model_name_or_path, pad_token="<pad>")
+                else:
+                    tokenizer = train_util.load_tokenizer(model_name_or_path=model_name_or_path)
+            else:
+                tokenizer = train_util.load_tokenizer(model_name_or_path=model_name_or_path)
             # strt = 29044976  # unhealthyconversations
             strt = None
-            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
+            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed, dataset_path=dataset_path)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
             n_user = len(it)
             d_log = dict(users=it, label_options=sconfig(f'datasets.{dataset_name}.labels'))
