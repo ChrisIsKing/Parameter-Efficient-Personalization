@@ -106,7 +106,7 @@
                 "valence"
             ],
             "multi_label": true,
-            "instruction": "Please analyze the following text and assign one or more appropriate emotion labels. Emotion labels includejoy, trust, anticipation, surprise, fear, sadness, disgust, anger, valence, and arousal. You can select one or multiple emotion labels that best capture the emotional content of the text. Respond with the emotion labels separated by a comma."
+            "instruction": "Please analyze the following text and assign one or more appropriate emotion labels. Emotion labels include joy, trust, anticipation, surprise, fear, sadness, disgust, anger, valence, and arousal. You can select one or multiple emotion labels that best capture the emotional content of the text. Respond with the emotion labels separated by a comma."
         },
         "cockamamie": {
             "domain": [

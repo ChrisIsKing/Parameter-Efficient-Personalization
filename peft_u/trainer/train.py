@@ -36,7 +36,7 @@ else:
 
 
 __all__ = [
-    'HF_MODEL_NAME', 'get_arg_parser',
+    'HF_MODEL_NAME', 'get_arg_parser', 'CAUSAL_LM',
     'TqdmPostfixCallback',
     'setup_train_output_path_n_loggers', 'load_tokenizer', 'BatchCollator',
     'MyTrainer',
@@ -52,7 +52,7 @@ else:
 
 
 logger = get_logger('Train Util')
-
+CAUSAL_LM = ["llama"]
 
 HF_MODEL_NAME = 'google/flan-t5-base'
 
@@ -97,7 +97,7 @@ def load_tokenizer(model_name_or_path: str = HF_MODEL_NAME, pad_token: dict = No
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     if pad_token is not None:
         tokenizer.add_special_tokens({"pad_token": pad_token})
-    tokenizer.model_max_length = 512
+    tokenizer.model_max_length = 4096
     return tokenizer
 
 
@@ -462,7 +462,7 @@ def get_user_test_pbar(it=None, user_id: str = None, user_idx: int = None, n_use
     return tqdm(it, desc=desc, **kwargs)
 
 
-def _lenient_decoded(allowed_suffixes: List[str] = None, label_options: List[str] = None) -> Callable[[str], str]:
+def _lenient_decoded(allowed_suffixes: List[str] = None, label_options: List[str] = None, allowed_prefixes: List[str] = None) -> Callable[[str], str]:
     """
     enforce an easier requirement by allowing no whitespace between labels,
         & being lenient here by dropping trailing full stop, quotes, verb suffixes, etc.
@@ -473,6 +473,9 @@ def _lenient_decoded(allowed_suffixes: List[str] = None, label_options: List[str
         ret = decoded.strip()
         for suf in (allowed_suffixes or []):
             ret = ret.removesuffix(suf)
+        
+        for pre in (allowed_prefixes or []):
+            ret = ret.removeprefix(pre)
 
         for lb in (label_options or []):
             if ret in lb:
@@ -491,14 +494,18 @@ class GetPredId:
     def __init__(self, label_options: List[str], logger_fl: Logger = None):
         self.label_options = label_options
         self.lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
-        self.lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed', '"', ')'], label_options=label_options)
+        self.lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed', '"', ')', ','], label_options=label_options, allowed_prefixes=['.'])
 
         self.logger_fl = logger_fl
 
-    def __call__(self, decoded: str = None, labels: str = None, user_id: Union[str, int] = None) -> PredIdPair:
+    def __call__(self, decoded: str = None, labels: str = None, input: str = None, strip_input: bool = False, user_id: Union[str, int] = None) -> PredIdPair:
         labels = labels.split(', ')  # See `peft_u.preprocess.load_dataset::InputExample.process_target`
         # model may generate multiple labels
-        decoded = [self.lenient(d) for d in decoded.split(',')]
+        # strip input from decoded
+        if strip_input and input is not None:
+            decoded = decoded.removeprefix(input)
+            decoded = decoded.strip()
+        decoded = [self.lenient(d) for d in decoded.split(' ')]
 
         dec_not_in_lb = [dec for dec in decoded if dec not in self.label_options]
         if len(dec_not_in_lb) > 0:
@@ -578,13 +585,14 @@ class MyTester:
             if torch.cuda.is_available():
                 inputs = {k: v.cuda() for k, v in inputs.items()}
             with torch.no_grad():
-                outputs = model.generate(**inputs, max_new_tokens=128)  # Greedy decoding
+                outputs = model.generate(**inputs, max_new_tokens=12)  # Greedy decoding
             lst_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
             # import pdb; pdb.set_trace()
 
             for i, decoded in enumerate(lst_decoded):
                 i_sample = i_ba * self.batch_size + i
-                out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target(), user_id=user_id)
+                out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target(), user_id=user_id, \
+                                input=dataset[i_sample].process_template(), strip_input=True if model.config.model_type in CAUSAL_LM else False)
                 preds[i_sample], trues[i_sample] = out.pred, out.true
 
             if i_ba + 1 == n_ba:  # last iteration
