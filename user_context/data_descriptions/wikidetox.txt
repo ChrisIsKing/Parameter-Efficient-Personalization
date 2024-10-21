@@ -1,0 +1,1 @@
+WikiDetoxAggression (Wulczyn et al., 2017) is a large collection of 100K online comments to English Wikipedia where crowd-source annotators label whether each comment is a personal attack.

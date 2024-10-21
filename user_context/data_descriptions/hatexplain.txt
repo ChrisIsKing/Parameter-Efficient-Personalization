@@ -1,0 +1,1 @@
+HateXplain (Mathew et al., 2022) contains posts on social media. Each post is classified into 3 classes: hate, offensive, or normal. The dataset additionally contained annotations for the hate speech target community and the rationales. We consider the post texts and the classification labels only.

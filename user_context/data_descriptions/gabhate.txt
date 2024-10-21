@@ -1,0 +1,1 @@
+GabHate (Kennedy et al., 2018) has 28K posts from the social media platform Gab. Each post is annotated using a hierarchical coding typology of hate-based rhetoric, with hierarchical labels indicating dehumanizing and violent speech, vulgarity and offensive language, and targeted groups. We only consider the top-level binary classification on hate speech.

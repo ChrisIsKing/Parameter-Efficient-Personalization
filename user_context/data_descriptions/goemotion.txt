@@ -1,0 +1,1 @@
+GoEmotion (Demszky et al., 2020) is a large annotated dataset of 58k English Reddit comments, labeled for 27 emotion categories or Neutral. We reduce the emotion categories into 6 coarse categories with Ekman-style grouping. Each comment can have multiple emotion labels. We drop texts with no labels annotated and texts labeled as ‘neutral’.
