@@ -1,5 +1,6 @@
 import re
 import json
+import csv
 import random
 from os.path import join as os_join
 from typing import List, Dict, Union, Any, Callable
@@ -29,16 +30,19 @@ PersonalizedDataset = Dict[str, Dict[str, Dict[str, Dict[str, Union[str, List[st
 
 class InputExample:
     def __init__(self, guid: Union[int, str], instruction: str = None, text: str = None, prompt_examples: List = None,
-                 label: List[str] = None) -> None:
+                 label: List[str] = None, user_profile: str = None) -> None:
         self.guid = guid
         self.text = text
         self.prompt_examples = prompt_examples
         self.instruction = instruction
+        self.user_profile = user_profile
         assert isinstance(label, list) and all(isinstance(l, str) for l in label)
         self.label = label
 
     def process_template(self) -> str:
         prompt = f"{self.instruction} "
+        if self.user_profile:
+            prompt += f"User profile: {self.user_profile}"
         for example in self.prompt_examples:
             txt, lb = example
             prompt += f"Text: {txt} Label: {lb}. "
@@ -93,10 +97,18 @@ def _load_dataset(dataset_name: str = None, leakage: bool = False, dataset_path:
         data = json.load(f)
     return data
 
+def _load_user_profiles(dataset_name: str = None) -> Dict:
+    data_path = os_join(u.proj_path, 'user_context/profiles_n20', dataset_name, 'profiles.csv')
+    data = {}
+    with open(data_path, mode='r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            data[row['annotator_id']] = row['profile']
+    return data
 
 def load_dataset_with_prompts(
         dataset_name: str, dataset_path: str = None, leakage: bool = False,
-        example_count: int = 1, max_example_count: int = 3, per_user: bool = True, seed: int = 42
+        example_count: int = 1, max_example_count: int = 3, per_user: bool = True, seed: int = 42, use_user_profile: bool = False
 ) -> Union[InputEgDataset, Dict[str, InputEgDataset]]:
     """
     Process data for few-shot learning
@@ -111,6 +123,7 @@ def load_dataset_with_prompts(
     """
     ret = dict()
     instruction = sconfig(f'datasets.{dataset_name}.instruction')
+    user_profiles = _load_user_profiles(dataset_name=dataset_name) if use_user_profile else None
     if dataset_path is None:
         dset = _load_dataset(dataset_name=dataset_name, leakage=leakage)
     else:
@@ -153,7 +166,7 @@ def load_dataset_with_prompts(
                 prompt_egs = prompt_egs[:max_example_count]  # keep only first `max_example_count` examples
 
                 lst.append(
-                    InputExample(guid=sid, instruction=instruction, text=text, prompt_examples=prompt_egs, label=label)
+                    InputExample(guid=sid, instruction=instruction, text=text, prompt_examples=prompt_egs, label=label, user_profile=user_profiles[uid] if user_profiles else None)
                 )
             return lst
         ret[uid] = InputEgDataset(

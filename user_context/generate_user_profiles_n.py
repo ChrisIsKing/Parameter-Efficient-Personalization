@@ -86,7 +86,6 @@ for dataset in datasets:
 
         with open(log_file, 'a') as f:
             samples.to_csv(f, header=False, index=False)
-        # print('abc123\n',df_batch)
         # print('Querying OpenAI')
         completion = client.chat.completions.create(
             model="gpt-4o-mini",

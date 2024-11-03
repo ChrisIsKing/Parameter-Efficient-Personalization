@@ -183,12 +183,12 @@ class MyTrainer:
         for epoch in range(1, self.num_epochs+1):
             model.train()
             total_tr_loss = 0
-
             tr_desc = f'Train Epoch {pl.i(epoch)}/{pl.i(self.num_epochs)}'
             it = tqdm(enumerate(train_dataloader, start=1), desc=tr_desc, total=n_step_per_epoch)
             for step, batch in it:
                 if torch.cuda.is_available():
                     batch = {k: v.cuda() for k, v in batch.items()}
+                print('abc003\n',torch.cuda.memory_summary())
                 outputs = model(**batch)
                 loss = outputs.loss
                 loss_item = loss.detach().item()
