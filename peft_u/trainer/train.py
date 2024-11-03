@@ -89,6 +89,7 @@ def get_arg_parser(default_method: str = None, method_choices: List[str] = None,
     train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
     train_parser.add_argument("--weight_decay", type=float, required=False, default=0.01)
     train_parser.add_argument("--output_dir", type=str, required=False, default=None)
+    train_parser.add_argument("--use_user_profile", type=bool, required=False, default=False)
     # Run on `cuda` if available, always personalize
     return ArgParser(parser=parser, train_parser=train_parser, test_parser=_add_args(test_parser))
 

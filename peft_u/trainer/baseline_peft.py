@@ -139,11 +139,11 @@ class TrainSaver:
 
 def _get_dataset_and_users_it(
         dataset_name: str, dataset_path: str = None, leakage: bool = False,
-        uid_start_from: Union[str, int] = None, uid_end_at: Union[str, int] = None, seed: int = None
+        uid_start_from: Union[str, int] = None, uid_end_at: Union[str, int] = None, seed: int = None, use_user_profile: bool = False
 ) -> Tuple[Dict[str, InputEgDataset], List[str]]:
     # from peft_u._dset_uid_too_small import uid_too_small
 
-    dset = load_dataset_with_prompts(dataset_name=dataset_name, dataset_path=dataset_path, leakage=leakage, seed=seed)
+    dset = load_dataset_with_prompts(dataset_name=dataset_name, dataset_path=dataset_path, leakage=leakage, seed=seed, use_user_profile=use_user_profile)
 
     filt = None
     # if dataset_name in uid_too_small:
@@ -165,6 +165,7 @@ if __name__ == '__main__':
             model_name_or_path, method = args.model, args.method
             dataset_name, leakage, dataset_path = args.dataset_name, args.leakage, args.dataset_path
             seed = args.seed
+            use_user_profile = args.use_user_profile
             output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='peft')
 
             # strt = 23  # goemotion
@@ -180,7 +181,7 @@ if __name__ == '__main__':
             # strt = '44590228'  # `unhealthyconversations`
             strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed, dataset_path=dataset_path)
-            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
+            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, use_user_profile=use_user_profile)
 
             tm = Timer()
             # global_tqdm = True
@@ -233,9 +234,9 @@ if __name__ == '__main__':
             date = now(fmt='short-date')
             if zeroshot:
                 d = dict(md=model_util.hf_model_name_drop_org(model_name_or_path), dnm=dataset_name)
-                eval_out_str = f'{date}_ZeroShot-Eval_{pl.pa(d)}'
+                eval_out_str = f'{date}_ZeroShot-Eval_{pl.pa(d)}' if not use_user_profile else f'{date}_UserProfle-ZeroShot-Eval_{pl.pa(d)}'
             else:
-                eval_out_str = f'{model_name_or_path}_Eval-{date}'
+                eval_out_str = f'{model_name_or_path}_Eval-{date}' if not use_user_profile else f'{model_name_or_path}_UserProfle-Eval-{date}'
             eval_output_path = os_join(u.eval_path, eval_out_str)
             os.makedirs(eval_output_path, exist_ok=True)
 
@@ -268,7 +269,7 @@ if __name__ == '__main__':
             # strt = 29044976  # unhealthyconversations
             strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed, dataset_path=dataset_path)
-            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt)
+            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, use_user_profile=use_user_profile)
             n_user = len(it)
             d_log = dict(users=it, label_options=sconfig(f'datasets.{dataset_name}.labels'))
             logger.info(f'Testing w/ {pl.i(d_log)}...')
@@ -339,7 +340,7 @@ if __name__ == '__main__':
         dnm = 'cockamamie'
         # strt = 1731
         strt = 1705
-        _, it = _get_dataset_and_users_it(dataset_name=dnm, uid_start_from=strt)
+        _, it = _get_dataset_and_users_it(dataset_name=dnm, uid_start_from=strt, use_user_profile=use_user_profile)
         # mic(it)
         x = ' '.join(uid2u_str(uid) for uid in it)
         print(x)
