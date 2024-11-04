@@ -45,7 +45,7 @@ def load_model(
     log = model_util.LoadModelLogging(logger=logger, logger_fl=logger_fl, verbose=verbose)
     cache_dir = log.get_n_log_cache_dir(model_name_or_path=model_name_or_path)
 
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
 
     if peft_method is not None:
         ca.check_mismatch('PEFT method', peft_method, PEFT_METHODS)

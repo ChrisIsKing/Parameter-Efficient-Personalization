@@ -186,14 +186,15 @@ class MyTrainer:
             for step, batch in it:
                 if torch.cuda.is_available():
                     batch = {k: v.cuda() for k, v in batch.items()}
-                outputs = model(**batch)
-                loss = outputs.loss
-                loss_item = loss.detach().item()
-                total_tr_loss += loss_item
-                loss.backward()
-                optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad()
+                with autocast(): #TODO fp16
+                    outputs = model(**batch)
+                    loss = outputs.loss
+                    loss_item = loss.detach().item()
+                    total_tr_loss += loss_item
+                    loss.backward()
+                    optimizer.step()
+                    lr_scheduler.step()
+                    optimizer.zero_grad()
 
                 glob_step, lr = (epoch-1) * n_step_per_epoch + step, optimizer.param_groups[0]['lr']
                 d_log = dict(epoch=epoch, step=glob_step, lr=lr, loss=loss_item)
