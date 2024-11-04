@@ -22,6 +22,7 @@ from peft_u.util import *
 from peft_u.preprocess.load_dataset import *
 import peft_u.util.models as model_util
 
+from torch.cuda.amp import autocast #TODO fp16
 
 if is_on_adapter():
     from transformers import AdapterTrainer
@@ -189,7 +190,7 @@ class MyTrainer:
             for step, batch in it:
                 if torch.cuda.is_available():
                     batch = {k: v.cuda() for k, v in batch.items()}
-                print('abc003\n',torch.cuda.memory_summary())
+                # with autocast(): #TODO fp16
                 outputs = model(**batch)
                 loss = outputs.loss
                 loss_item = loss.detach().item()
