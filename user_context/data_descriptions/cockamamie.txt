@@ -1,0 +1,1 @@
+Cockamamie (Gultchin et al., 2019) includes 120K words and phrases from GNEWS. The words and phrases are annotated by crowd workers fluent in English on whether they are humorous. 1,500 words are further annotated on six binary humor features. We leverage the words and the initial binary “humorous” labels only.

@@ -1,0 +1,1 @@
+TweetEval (Röttger et al., 2022) comprises 200 Twitter posts, each annotated by 20 annotator groups of 3. Annotators were given a short definition of hate speech only, which encourages the subjectivity of annotators. The labels are binary classifications of hatefulness.

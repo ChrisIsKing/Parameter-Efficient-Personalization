@@ -1,0 +1,9 @@
+Name,# Users,Avg # examples per user,Avg # users per text,Krippendorff’s Alpha
+philosophy.stackexchange.com,145,70.2551724137931,7.246366279069767,
+worldbuilding.stackexchange.com,926,86.23974082073434,9.195949601916983,
+parenting.stackexchange.com,88,45.04545454545455,7.6352288488210815,
+travel.stackexchange.com,93,51.75268817204301,6.765838824125697,
+interpersonal.stackexchange.com,57,39.68421052631579,8.188118811881187,
+workplace.stackexchange.com,435,72.55632183908045,7.54201266713582,
+judaism.stackexchange.com,99,61.09090909090909,6.5974576271186445,
+goodreads,10027,5.556198264685349,1207.942396313364,
