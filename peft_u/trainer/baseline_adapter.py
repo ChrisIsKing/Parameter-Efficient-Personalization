@@ -369,3 +369,4 @@ if __name__ == '__main__':
                 untrained.append(uid)
         mic(untrained)
     # check_untrained_users()
+

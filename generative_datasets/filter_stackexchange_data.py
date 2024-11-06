@@ -21,8 +21,8 @@ for dataset in ['interpersonal','parenting','travel','workplace','philosophy','w
     # print(answers)
     print(f"{dataset}: {len(answers)} answers to {len(questions)} questions from {len(answers['OwnerUserId'].unique())} users")
     if len(answers) > 0 and len(questions) > 0:
-        answers.to_xml(f'generative_datasets/{dataset}.stackexchange.com/Answers.xml')
-        questions.to_xml(f'generative_datasets/{dataset}.stackexchange.com/Questions.xml')
+        answers.to_xml(f'data/{dataset}.stackexchange.com/Answers.xml')
+        questions.to_xml(f'data/{dataset}.stackexchange.com/Questions.xml')
 
 # interpersonal: 2262 answers to 2343 questions from 57 users
 # parenting: 3964 answers to 4034 questions from 88 users

@@ -4,6 +4,7 @@ import random
 from os.path import join as os_join
 from typing import List, Dict, Union, Any, Callable
 from dataclasses import dataclass
+import csv
 
 from torch.utils.data import Dataset
 
@@ -29,16 +30,19 @@ PersonalizedDataset = Dict[str, Dict[str, Dict[str, Dict[str, Union[str, List[st
 
 class InputExample:
     def __init__(self, guid: Union[int, str], instruction: str = None, text: str = None, prompt_examples: List = None,
-                 label: List[str] = None) -> None:
+                 label: List[str] = None, user_profile: str = None) -> None:
         self.guid = guid
         self.text = text
         self.prompt_examples = prompt_examples
         self.instruction = instruction
+        self.user_profile = user_profile
         assert isinstance(label, list) and all(isinstance(l, str) for l in label)
         self.label = label
 
     def process_template(self) -> str:
         prompt = f"{self.instruction} "
+        if self.user_profile:
+            prompt += f"User profile: {self.user_profile}"
         for example in self.prompt_examples:
             txt, lb = example
             prompt += f"Text: {txt} Label: {lb}. "
@@ -90,6 +94,14 @@ def _load_dataset(dataset_name: str = None, leakage: bool = False) -> Personaliz
         data = json.load(f)
     return data
 
+def _load_user_profiles(dataset_name: str = None) -> Dict:
+    data_path = os_join(u.proj_path, 'user_context/profiles_n20', dataset_name, 'profiles.csv')
+    data = {}
+    with open(data_path, mode='r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            data[row['annotator_id']] = row['profile']
+    return data
 
 def load_dataset_with_prompts(
         dataset_name: str, leakage: bool = False,
@@ -109,6 +121,7 @@ def load_dataset_with_prompts(
     ret = dict()
     instruction = sconfig(f'datasets.{dataset_name}.instruction')
     dset = _load_dataset(dataset_name=dataset_name, leakage=leakage)
+    user_profiles = _load_user_profiles(dataset_name=dataset_name) if use_user_profile else None
 
     for uid, dset_ in dset.items():
         def split2label_options(split: str) -> List[str]:
@@ -147,7 +160,7 @@ def load_dataset_with_prompts(
                 prompt_egs = prompt_egs[:max_example_count]  # keep only first `max_example_count` examples
 
                 lst.append(
-                    InputExample(guid=sid, instruction=instruction, text=text, prompt_examples=prompt_egs, label=label)
+                    InputExample(guid=sid, instruction=instruction, text=text, prompt_examples=prompt_egs, label=label, user_profile=user_profiles[uid] if user_profiles else None)
                 )
             return lst
         ret[uid] = InputEgDataset(
@@ -243,3 +256,4 @@ if __name__ == '__main__':
         dset = load_dataset_with_prompts(dataset_name='tweeteval')
         mic(dset.keys())
     check_add_template()
+

@@ -8,10 +8,10 @@ from peft_u.preprocess.convert_data_format import *
 if __name__ == '__main__':
     from stefutil import *
 
-    dset_base_path = os_join(u.proj_path, u.dset_dir, 'gabhate')
+    dset_base_path = os_join(u.proj_path, u.dset_dir, 'goodreads')
     data, headers = load_csv(os_join(dset_base_path, 'GabHateCorpus_annotations.tsv'), delimiter='\t', header=True)
 
-    label_map = {0: 'Non-hateful', 1: 'Hateful'}
+    # label_map = {0: 'Non-hateful', 1: 'Hateful'}
     user_data = defaultdict(dict)
 
     for row in data:
