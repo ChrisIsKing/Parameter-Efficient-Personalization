@@ -71,9 +71,9 @@ def get_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> T5TokenizerFast:
 
 def load_dataset(
         dataset_name: str = None, leakage: bool = None, seed: int = None, load_users_args: Dict[str, Any] = None,
-        tokenizer: T5TokenizerFast = None, tokenize: bool = True, **kwargs
+        tokenizer: T5TokenizerFast = None, tokenize: bool = True, use_user_profile:bool = False, **kwargs
 ) -> Tuple[Dict[str, DatasetDict], List[str]]:
-    dsets = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed)
+    dsets = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile)
 
     user_ids = iter_users(dataset=dsets, **(load_users_args or dict()))
     n_original_user, n_user = len(dsets), len(user_ids)
@@ -211,6 +211,7 @@ if __name__ == '__main__':
             model_name_or_path, method = args.model, args.method
             dataset_name, leakage = args.dataset_name, args.leakage
             seed = args.seed
+            use_user_profile = args.use_user_profile
             output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='adapter')
 
             tokenizer = get_tokenizer(model_name_or_path=model_name_or_path)
@@ -226,7 +227,8 @@ if __name__ == '__main__':
             dsets, it = load_dataset(
                 dataset_name=dataset_name, leakage=leakage, seed=seed,
                 load_users_args=dict(start_from=strt, end_at=end),
-                tokenizer=tokenizer, remove_columns=['text', 'label']
+                tokenizer=tokenizer, remove_columns=['text', 'label'],
+                use_user_profile=use_user_profile
             )
 
             tm = Timer()
@@ -271,7 +273,7 @@ if __name__ == '__main__':
             seed = args.seed
 
             date = now(fmt='short-date')
-            eval_output_path = os_join(u.proj_path, 'eval', f'{model_name_or_path}_Eval-{date}')
+            eval_output_path = os_join(u.proj_path, 'eval', f'{model_name_or_path}_Eval-{date}' if not use_user_profile else f'{model_name_or_path}__UserProfile-Eval-{date}')
             os.makedirs(eval_output_path, exist_ok=True)
 
             d_log = dict(
@@ -286,7 +288,7 @@ if __name__ == '__main__':
 
             model_name_or_path = model_util.prepend_local_model_path(model_path=model_name_or_path)
             tokenizer = get_tokenizer(model_name_or_path=HF_MODEL_NAME)
-            dsets, it = load_dataset(dataset_name=dataset_name, leakage=leakage, seed=seed, tokenizer=tokenizer)
+            dsets, it = load_dataset(dataset_name=dataset_name, leakage=leakage, seed=seed, tokenizer=tokenizer, use_user_profile=use_user_profile)
 
             n_user = len(it)
 

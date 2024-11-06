@@ -93,7 +93,7 @@ def _load_dataset(dataset_name: str = None, leakage: bool = False) -> Personaliz
 
 def load_dataset_with_prompts(
         dataset_name: str, leakage: bool = False,
-        example_count: int = 1, max_example_count: int = 3, per_user: bool = True, seed: int = 42
+        example_count: int = 1, max_example_count: int = 3, per_user: bool = True, seed: int = 42, use_user_profile: bool = False
 ) -> Union[InputEgDataset, Dict[str, InputEgDataset]]:
     """
     Process data for few-shot learning

@@ -22,6 +22,7 @@ from peft_u.util import *
 from peft_u.preprocess.load_dataset import *
 import peft_u.util.models as model_util
 
+from torch.cuda.amp import autocast #TODO fp16
 
 if is_on_adapter():
     from transformers import AdapterTrainer
@@ -88,6 +89,7 @@ def get_arg_parser(default_method: str = None, method_choices: List[str] = None,
     train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
     train_parser.add_argument("--weight_decay", type=float, required=False, default=0.01)
     train_parser.add_argument("--output_dir", type=str, required=False, default=None)
+    train_parser.add_argument("--use_user_profile", type=bool, required=False, default=False)
     # Run on `cuda` if available, always personalize
     return ArgParser(parser=parser, train_parser=train_parser, test_parser=_add_args(test_parser))
 
@@ -427,15 +429,16 @@ def setup_train_output_path_n_loggers(args: Namespace, approach: str = None) -> 
     weight_decay = args.weight_decay
     seed = args.seed
     output_dir = args.output_dir
+    use_user_profile = args.use_user_profile
 
-    get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key=approach)
+    get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key=approach, use_user_profile=use_user_profile)
     output_path = model_util.get_train_output_path(**get_args, dataset_name=dataset_name)
     d_log = dict(
         model_name_or_path=model_name_or_path, method=method,
         dataset_name=dataset_name, leakage=leakage,
         batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate, weight_decay=weight_decay,
         seed=seed,
-        output_dir=output_dir, output_path=output_path
+        output_dir=output_dir, output_path=output_path, use_user_profile=use_user_profile
     )
     fnm = os_join(output_path, f'train_{now(for_path=True)}.log')
     cap_ap = approach.capitalize()
