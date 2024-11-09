@@ -176,6 +176,11 @@
             ],
             "multi_label": false,
             "instruction": "Please analyze the following text and rate your sentiment towards the witness. Sentiment labels include 'somewhat-positive', 'positive', 'very-positive', 'somewhat-negative', 'very-negative', 'neutral' and 'negative'. Respond with the sentiment label that best captures your sentiment towards the witness."
+        },
+        "interpersonal": {
+            "domain": [
+                "generative question-answer response"
+            ]
         }
     }
 }

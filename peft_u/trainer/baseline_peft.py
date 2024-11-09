@@ -131,11 +131,11 @@ class TrainSaver:
 
 def _get_dataset_and_users_it(
         dataset_name: str, leakage: bool = False,
-        uid_start_from: Union[str, int] = None, uid_end_at: Union[str, int] = None, seed: int = None, use_user_profile: bool = False
+        uid_start_from: Union[str, int] = None, uid_end_at: Union[str, int] = None, seed: int = None, use_user_profile: bool = False, is_generative: bool = False
 ) -> Tuple[Dict[str, InputEgDataset], List[str]]:
     # from peft_u._dset_uid_too_small import uid_too_small
 
-    dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile)
+    dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile, is_generative=is_generative)
 
     filt = None
     # if dataset_name in uid_too_small:
@@ -171,9 +171,11 @@ if __name__ == '__main__':
             # strt = 366  # `wikidetox`
             # strt = 2687  # wikidetox.p_tuning`
             # strt = '44590228'  # `unhealthyconversations`
+            is_generative = (dataset_name == 'interpersonal')
+
             strt = None
-            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
-            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, use_user_profile=use_user_profile)
+            load_args = dict(dataset_name=dataset_name, leakage=leakage if not is_generative else False, seed=seed)
+            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, use_user_profile=use_user_profile, is_generative=is_generative)
 
             tm = Timer()
             # global_tqdm = True

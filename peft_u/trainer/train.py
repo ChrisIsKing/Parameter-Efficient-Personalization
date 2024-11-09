@@ -89,7 +89,7 @@ def get_arg_parser(default_method: str = None, method_choices: List[str] = None,
     train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
     train_parser.add_argument("--weight_decay", type=float, required=False, default=0.01)
     train_parser.add_argument("--output_dir", type=str, required=False, default=None)
-    train_parser.add_argument("--use_user_profile", type=bool, required=False, default=False)
+    train_parser.add_argument("--use_user_profile", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
     # Run on `cuda` if available, always personalize
     return ArgParser(parser=parser, train_parser=train_parser, test_parser=_add_args(test_parser))
 
@@ -191,7 +191,12 @@ class MyTrainer:
                 with autocast(): #TODO fp16
                     outputs = model(**batch)
                     loss = outputs.loss
+                    # print('model==\n',model)
+                    print('batch==',batch)
+                    print('loss==',loss)
+                    # exit(0)
                     loss_item = loss.detach().item()
+                    print('loss_item==',loss_item)
                     total_tr_loss += loss_item
                     loss.backward()
                     optimizer.step()

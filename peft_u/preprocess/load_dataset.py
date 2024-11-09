@@ -105,7 +105,7 @@ def _load_user_profiles(dataset_name: str = None) -> Dict:
 
 def load_dataset_with_prompts(
         dataset_name: str, leakage: bool = False,
-        example_count: int = 1, max_example_count: int = 3, per_user: bool = True, seed: int = 42, use_user_profile: bool = False
+        example_count: int = 1, max_example_count: int = 3, per_user: bool = True, seed: int = 42, use_user_profile: bool = False, is_generative: bool = False
 ) -> Union[InputEgDataset, Dict[str, InputEgDataset]]:
     """
     Process data for few-shot learning
@@ -119,13 +119,16 @@ def load_dataset_with_prompts(
     :param seed: random seed for sampling prompt examples
     """
     ret = dict()
-    instruction = sconfig(f'datasets.{dataset_name}.instruction')
+
+    text_col = 'text' if not is_generative else 'question'
+    label_col = 'label' if not is_generative else 'answer'
+    instruction = sconfig(f'datasets.{dataset_name}.instruction') if not is_generative else None
     dset = _load_dataset(dataset_name=dataset_name, leakage=leakage)
     user_profiles = _load_user_profiles(dataset_name=dataset_name) if use_user_profile else None
 
     for uid, dset_ in dset.items():
         def split2label_options(split: str) -> List[str]:
-            return sorted(set().union(*[v['label'] for k, v in dset_[split].items()]))
+            return sorted(set().union(*[v[label_col] for k, v in dset_[split].items()]))
 
         # Get all labels in the train split
         label_options = split2label_options('train')
@@ -133,7 +136,7 @@ def load_dataset_with_prompts(
         # assert label_options == split2label_options('val') == split2label_options('test')
 
         lb2txts: Dict[str, List[str]] = {  # label => list of examples w/ that label
-            label: [sample['text'] for id_, sample in dset_['train'].items() if label in sample['label']]
+            label: [sample[text_col] for id_, sample in dset_['train'].items() if label in sample[label_col]]
             for label in label_options
         }
 
@@ -145,7 +148,7 @@ def load_dataset_with_prompts(
                 random.seed(seed)
             lst = []
             for sid, sample in dset_[split].items():
-                text, label = sample['text'], sample['label']
+                text, label = sample[text_col], sample[label_col]
 
                 # take n random examples from each category for few-shot prompt
                 prompt_egs = []

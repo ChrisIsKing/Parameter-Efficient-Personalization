@@ -165,14 +165,14 @@ def avg_num_users_per_example(user_data):
     return sum(num_users_per_example.values()) / len(num_users_per_example)
 
 
-def save_datasets(data: PersonalizedData = None, base_path: str = None, label_key: str = 'label'):
+def save_datasets(data: PersonalizedData = None, base_path: str = None, label_key: str = 'label', is_generative: bool = False):
     """
     Saves processed personalized dataset as json files on disk, one leaked and one non-leaked.
     """
     def check_label(label: List[str]):
         return len(label) > 0 and all(isinstance(lb, str) for lb in label)
     # sanity check each `label` is a list of strings
-    assert all(all(check_label(sample['label']) for sid, sample in samples.items()) for uid, samples in data.items())
+    assert is_generative or all(all(check_label(sample['label']) for sid, sample in samples.items()) for uid, samples in data.items())
 
     num_annotators = len(data)
     num_examples = sum([len(v) for k, v in data.items()])

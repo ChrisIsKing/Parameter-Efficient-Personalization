@@ -137,6 +137,9 @@ config_dict = dict(
                         "Sentiment labels include 'somewhat-positive', 'positive', 'very-positive', "
                         "'somewhat-negative', 'very-negative', 'neutral' and 'negative'. "
                         "Respond with the sentiment label that best captures your sentiment towards the witness."
+        ),
+        interpersonal=dict(
+            domain=['generative question-answer response']
         )
     )
 )
