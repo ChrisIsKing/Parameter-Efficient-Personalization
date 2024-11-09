@@ -179,6 +179,7 @@ class MyTrainer:
 
         best_val_loss = float('inf')
 
+
         for epoch in range(1, self.num_epochs+1):
             model.train()
             total_tr_loss = 0
@@ -188,20 +189,25 @@ class MyTrainer:
             for step, batch in it:
                 if torch.cuda.is_available():
                     batch = {k: v.cuda() for k, v in batch.items()}
-                with autocast(): #TODO fp16
-                    outputs = model(**batch)
-                    loss = outputs.loss
-                    # print('model==\n',model)
-                    print('batch==',batch)
-                    print('loss==',loss)
-                    # exit(0)
-                    loss_item = loss.detach().item()
-                    print('loss_item==',loss_item)
-                    total_tr_loss += loss_item
-                    loss.backward()
-                    optimizer.step()
-                    lr_scheduler.step()
-                    optimizer.zero_grad()
+                # with autocast(): #TODO fp16
+                outputs = model(**batch)
+
+                # TODO fix -- not learing
+                logits = outputs.logits
+                logits = logits.view(-1, logits.size(-1))
+                loss = torch.nn.CrossEntropyLoss()(logits, torch.flatten(batch['labels']))#outputs.loss
+
+
+                # print('model==\n',model)
+                # print('batch==',batch)
+                # exit(0)
+                loss_item = loss.detach().item()
+                # print('loss_item==',loss_item)
+                total_tr_loss += loss_item
+                loss.backward()
+                optimizer.step()
+                lr_scheduler.step()
+                optimizer.zero_grad()
 
                 glob_step, lr = (epoch-1) * n_step_per_epoch + step, optimizer.param_groups[0]['lr']
                 d_log = dict(epoch=epoch, step=glob_step, lr=lr, loss=loss_item)

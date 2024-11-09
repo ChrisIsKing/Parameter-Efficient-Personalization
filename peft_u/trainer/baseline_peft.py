@@ -172,7 +172,6 @@ if __name__ == '__main__':
             # strt = 2687  # wikidetox.p_tuning`
             # strt = '44590228'  # `unhealthyconversations`
             is_generative = (dataset_name == 'interpersonal')
-
             strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage if not is_generative else False, seed=seed)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, use_user_profile=use_user_profile, is_generative=is_generative)
@@ -202,13 +201,14 @@ if __name__ == '__main__':
                     logger.info(f'Launching {pl.i(dataset_name)} personalized training for User {user_str_ordinal}...')
                 tm_ = Timer()
 
-                # # if any dataset split is empty, skip
-                # split_sizes = _get_dataset_sizes(dset[uid])
-                # if any(v == 0 for v in split_sizes.values()):
-                #     logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
-                #     continue
+                # if any dataset split is empty, skip
+                split_sizes = get_dataset_sizes(dset[uid])
+                if any(v == 0 for v in split_sizes.values()):
+                    logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
+                    continue
 
                 model = load_model(model_name_or_path=model_name_or_path, peft_method=method, logger_fl=logger_fl)
+                # print('abc123',is_generative,use_user_profile)
                 trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False)
                 t_e_ = tm_.end()
                 if not global_tqdm:

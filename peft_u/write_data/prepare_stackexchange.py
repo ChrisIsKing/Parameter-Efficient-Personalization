@@ -12,7 +12,7 @@ if __name__ == '__main__':
 
     substack = sys.argv[1]
 
-    dset_base_path = os_join(u.proj_path, u.dset_dir, f'{substack}.stackexchange.com')
+    dset_base_path = os_join(u.proj_path, u.dset_dir, substack)#f'{substack}.stackexchange.com')
     data, headers = load_csv(os_join(dset_base_path, f'{substack}.csv'), delimiter=',', header=True)
 
     # label_map = {0: 'Non-hateful', 1: 'Hateful'}
