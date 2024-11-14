@@ -25,12 +25,12 @@ if __name__ == '__main__':
     def run():
         # Labels: [`Hateful`, `Non-hateful`]
         data, headers = load_csv(os_join(dset_base_path, 'annotations_g3.csv'), delimiter=",", header=True)
-
+        uids = [headers[i] for i in range (2,len(headers))]
         user_data: PersonalizedData = defaultdict(dict)
         for row in data:
             post_id, text, user_labels = row[0], row[1], row[2:]
-            for uid, label in enumerate(user_labels):
-                user_data[uid][post_id] = dict(text=text, label=[label])
+            for id_num, label in enumerate(user_labels):
+                user_data[uids[id_num]][post_id] = dict(text=text, label=[label])
 
         save_datasets(data=user_data, base_path=output_dir if args.output_dir is not None else dset_base_path)
         mic(data2label_meta(data=user_data))

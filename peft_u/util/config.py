@@ -137,6 +137,37 @@ config_dict = dict(
                         "Sentiment labels include 'somewhat-positive', 'positive', 'very-positive', "
                         "'somewhat-negative', 'very-negative', 'neutral' and 'negative'. "
                         "Respond with the sentiment label that best captures your sentiment towards the witness."
+        ),
+        interpersonal=dict(
+            domain=['generative book review response']
+        )
+        ,
+        interpersonal=dict(
+            domain=['generative question-answer response']
+        )
+        ,
+        judaism=dict(
+            domain=['generative question-answer response']
+        )
+        ,
+        parenting=dict(
+            domain=['generative question-answer response']
+        )
+        ,
+        philosophy=dict(
+            domain=['generative question-answer response']
+        )
+        ,
+        travel=dict(
+            domain=['generative question-answer response']
+        )
+        ,
+        workplace=dict(
+            domain=['generative question-answer response']
+        )
+        ,
+        worldbuilding=dict(
+            domain=['generative question-answer response']
         )
     )
 )

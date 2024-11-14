@@ -23,6 +23,7 @@ from peft_u.preprocess.load_dataset import *
 import peft_u.util.models as model_util
 
 from torch.cuda.amp import autocast #TODO fp16
+from rouge_score import rouge_scorer
 
 if is_on_adapter():
     from transformers import AdapterTrainer
@@ -37,7 +38,7 @@ else:
 
 
 __all__ = [
-    'HF_MODEL_NAME', 'get_arg_parser', 'CAUSAL_LM',
+    'HF_MODEL_NAME', 'get_arg_parser',
     'TqdmPostfixCallback',
     'setup_train_output_path_n_loggers', 'load_tokenizer', 'BatchCollator',
     'MyTrainer',
@@ -53,7 +54,7 @@ else:
 
 
 logger = get_logger('Train Util')
-CAUSAL_LM = ["llama"]
+
 
 HF_MODEL_NAME = 'google/flan-t5-base'
 
@@ -63,8 +64,7 @@ dataset_names = list(sconfig('datasets'))
 def _add_args(parser: ArgumentParser) -> ArgumentParser:
     parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
     parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
-    parser.add_argument("--dataset_path", type=str, required=False, default=None)
-    parser.add_argument("--leakage", type=str, required=False, default=True)
+    parser.add_argument("--leakage", type=lambda x: (str(x).lower() == 'true'), required=False, default=True)
     parser.add_argument("--seed", type=int, required=False, default=42)
     parser.add_argument("--batch_size", type=int, required=False, default=8)
     return parser
@@ -90,21 +90,20 @@ def get_arg_parser(default_method: str = None, method_choices: List[str] = None,
     train_parser.add_argument("--learning_rate", type=float, required=False, default=2e-5)
     train_parser.add_argument("--weight_decay", type=float, required=False, default=0.01)
     train_parser.add_argument("--output_dir", type=str, required=False, default=None)
-    train_parser.add_argument("--use_user_profile", type=bool, required=False, default=False)
+    train_parser.add_argument("--use_user_profile", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
+    train_parser.add_argument("--is_generative", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
     # Run on `cuda` if available, always personalize
     return ArgParser(parser=parser, train_parser=train_parser, test_parser=_add_args(test_parser))
 
 
-def load_tokenizer(model_name_or_path: str = HF_MODEL_NAME, pad_token: dict = None) -> PreTrainedTokenizer:
+def load_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> PreTrainedTokenizer:
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-    if pad_token is not None:
-        tokenizer.add_special_tokens({"pad_token": pad_token})
-    tokenizer.model_max_length = 4096
+    tokenizer.model_max_length = 512
     return tokenizer
 
 
 class BatchCollator:
-    tok_args = dict(truncation=True, padding='max_length', return_tensors='pt', return_token_type_ids=False)
+    tok_args = dict(truncation=True, padding='max_length', return_tensors='pt')
 
     def __init__(self, tokenizer: PreTrainedTokenizer):
         self.tokenizer = tokenizer
@@ -145,7 +144,7 @@ class MyTrainer:
 
     def __call__(
             self, model: torch.nn.Module, dataset: InputEgDataset,
-            user_id: str = None, verbose: bool = False, save_per_epoch: bool = True
+            user_id: str = None, verbose: bool = False, save_per_epoch: bool = True, is_generative: bool = False
     ):
         output_path = os_join(self.output_path, uid2u_str(user_id))
         saver = self.saver_cls(model=model, output_base_path=output_path)
@@ -182,17 +181,25 @@ class MyTrainer:
 
         best_val_loss = float('inf')
 
+
         for epoch in range(1, self.num_epochs+1):
             model.train()
             total_tr_loss = 0
+
             tr_desc = f'Train Epoch {pl.i(epoch)}/{pl.i(self.num_epochs)}'
             it = tqdm(enumerate(train_dataloader, start=1), desc=tr_desc, total=n_step_per_epoch)
             for step, batch in it:
                 if torch.cuda.is_available():
                     batch = {k: v.cuda() for k, v in batch.items()}
-                # with autocast(): #TODO fp16
                 outputs = model(**batch)
-                loss = outputs.loss
+
+                logits = outputs.logits
+                logits = logits.view(-1, logits.size(-1))
+                if is_generative:
+                    loss = torch.nn.CrossEntropyLoss()(logits, torch.flatten(batch['labels']))
+                else:
+                    loss = outputs.loss
+
                 loss_item = loss.detach().item()
                 total_tr_loss += loss_item
                 loss.backward()
@@ -431,15 +438,16 @@ def setup_train_output_path_n_loggers(args: Namespace, approach: str = None) -> 
     weight_decay = args.weight_decay
     seed = args.seed
     output_dir = args.output_dir
+    use_user_profile = args.use_user_profile
 
-    get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key=approach)
+    get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key=approach, use_user_profile=use_user_profile)
     output_path = model_util.get_train_output_path(**get_args, dataset_name=dataset_name)
     d_log = dict(
         model_name_or_path=model_name_or_path, method=method,
         dataset_name=dataset_name, leakage=leakage,
         batch_size=batch_size, num_epochs=num_epochs, learning_rate=learning_rate, weight_decay=weight_decay,
         seed=seed,
-        output_dir=output_dir, output_path=output_path
+        output_dir=output_dir, output_path=output_path, use_user_profile=use_user_profile
     )
     fnm = os_join(output_path, f'train_{now(for_path=True)}.log')
     cap_ap = approach.capitalize()
@@ -464,7 +472,7 @@ def get_user_test_pbar(it=None, user_id: str = None, user_idx: int = None, n_use
     return tqdm(it, desc=desc, **kwargs)
 
 
-def _lenient_decoded(allowed_suffixes: List[str] = None, label_options: List[str] = None, allowed_prefixes: List[str] = None) -> Callable[[str], str]:
+def _lenient_decoded(allowed_suffixes: List[str] = None, label_options: List[str] = None) -> Callable[[str], str]:
     """
     enforce an easier requirement by allowing no whitespace between labels,
         & being lenient here by dropping trailing full stop, quotes, verb suffixes, etc.
@@ -475,9 +483,6 @@ def _lenient_decoded(allowed_suffixes: List[str] = None, label_options: List[str
         ret = decoded.strip()
         for suf in (allowed_suffixes or []):
             ret = ret.removesuffix(suf)
-        
-        for pre in (allowed_prefixes or []):
-            ret = ret.removeprefix(pre)
 
         for lb in (label_options or []):
             if ret in lb:
@@ -496,18 +501,14 @@ class GetPredId:
     def __init__(self, label_options: List[str], logger_fl: Logger = None):
         self.label_options = label_options
         self.lb2id = {lb: i for i, lb in enumerate(label_options)}  # sanity check each pred and true label is in config
-        self.lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed', '"', ')', ','], label_options=label_options, allowed_prefixes=['.'])
+        self.lenient = _lenient_decoded(allowed_suffixes=['.', "'", 'ing', 'ed', '"', ')'], label_options=label_options)
 
         self.logger_fl = logger_fl
 
-    def __call__(self, decoded: str = None, labels: str = None, input: str = None, strip_input: bool = False, user_id: Union[str, int] = None) -> PredIdPair:
+    def __call__(self, decoded: str = None, labels: str = None, user_id: Union[str, int] = None) -> PredIdPair:
         labels = labels.split(', ')  # See `peft_u.preprocess.load_dataset::InputExample.process_target`
         # model may generate multiple labels
-        # strip input from decoded
-        if strip_input and input is not None:
-            decoded = decoded.removeprefix(input)
-            decoded = decoded.strip()
-        decoded = [self.lenient(d) for d in decoded.split(' ')]
+        decoded = [self.lenient(d) for d in decoded.split(',')]
 
         dec_not_in_lb = [dec for dec in decoded if dec not in self.label_options]
         if len(dec_not_in_lb) > 0:
@@ -563,10 +564,11 @@ class MyTester:
 
     def __call__(
             self, model: Union[PreTrainedModel, PeftModel], dataset: ListDataset = None,
-            user_id: str = None, user_idx: int = None,
+            user_id: str = None, user_idx: int = None, is_generative: bool = False
 
     ) -> float:
-        label_options = sconfig(f'datasets.{self.dataset_name}.labels')
+        if not is_generative:
+            label_options = sconfig(f'datasets.{self.dataset_name}.labels')
         n_sample = len(dataset)
 
         collate_fn = partial(smart_batching_collate, tokenizer=self.tokenizer)
@@ -580,41 +582,73 @@ class MyTester:
 
         ret = None
         n_ba = len(ts_dl)
-        get_pred = GetPredId(label_options=label_options, logger_fl=self.logger_fl)
+        if not is_generative:
+            get_pred = GetPredId(label_options=label_options, logger_fl=self.logger_fl)
+        else:
+            scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+
         for i_ba, inputs in enumerate(it):
             inputs = {k: v for k, v in inputs.items()}
             inputs.pop('labels')
             if torch.cuda.is_available():
                 inputs = {k: v.cuda() for k, v in inputs.items()}
             with torch.no_grad():
-                outputs = model.generate(**inputs, max_new_tokens=12)  # Greedy decoding
+                outputs = model.generate(**inputs, max_new_tokens=128)  # Greedy decoding
             lst_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-            # import pdb; pdb.set_trace()
 
-            for i, decoded in enumerate(lst_decoded):
-                i_sample = i_ba * self.batch_size + i
-                out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target(), user_id=user_id, \
-                                input=dataset[i_sample].process_template(), strip_input=True if model.config.model_type in CAUSAL_LM else False)
-                preds[i_sample], trues[i_sample] = out.pred, out.true
+            if not is_generative:
+                for i, decoded in enumerate(lst_decoded):
+                    i_sample = i_ba * self.batch_size + i
+                    out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target(), user_id=user_id)
+                    preds[i_sample], trues[i_sample] = out.pred, out.true
+                if i_ba + 1 == n_ba:  # last iteration
+                    ret = test_user_update_postfix_n_write_df(
+                        label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
+                        df_out_path=os_join(self.eval_output_path, f'{uid2u_str(user_id)}.csv')
+                    )
+            else:
+                for i, decoded in enumerate(lst_decoded):
+                    i_sample = i_ba * self.batch_size + i
+                    if not is_generative:
+                        out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target(), user_id=user_id)
+                        preds[i_sample], trues[i_sample] = out.pred, out.true
+                    else:
+                        ret = scorer.score(dataset[i_sample].label[0], decoded)
 
-            if i_ba + 1 == n_ba:  # last iteration
-                ret = test_user_update_postfix_n_write_df(
-                    label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
-                    df_out_path=os_join(self.eval_output_path, f'{uid2u_str(user_id)}.csv')
-                )
         return ret
 
 
 def log_n_save_test_results(
         d_accs: Dict[str, float] = None, dataset_name: str = None, logger_fl: Logger = None,
-        eval_output_path: str = None
+        eval_output_path: str = None, is_generative: bool = False
 ):
-    acc_avg = np.mean(list(d_accs.values()))
-    acc_avg_str = f'{acc_avg * 100:.1f}'
-    logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg_str)}')
-    logger_fl.info(f'Dataset {dataset_name} macro-avg acc: {acc_avg_str}')
-    with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
-        json.dump(d_accs, f, indent=4)
+    if not is_generative:
+        acc_avg = np.mean(list(d_accs.values()))
+        acc_avg_str = f'{acc_avg * 100:.1f}'
+        logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg_str)}')
+        logger_fl.info(f'Dataset {dataset_name} macro-avg acc: {acc_avg_str}')
+        with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
+            json.dump(d_accs, f, indent=4)
+    else:
+        rouges = list(d_accs.values())[0].keys()
+        metrics = ['precision','recall','fmeasure']
+        rouge_avg = {}
+        for rouge in rouges:
+            rouge_avg[rouge] = {}
+            for metric_idx in range(len(metrics)):
+                rouge_avg[rouge][metrics[metric_idx]] = f'{np.mean([score[rouge][metric_idx] for score in list(d_accs.values())]) * 100:.1f}'
+        logger.info(f'Dataset {pl.i(dataset_name)} macro-avg rouge:\n{pl.i(rouge_avg)}')
+        logger_fl.info(f'Dataset {dataset_name} macro-avg rouge:\n{rouge_avg}')
+
+        d_with_rouge_keys = {
+            uid: {
+                rouge: {v: score[i] for i,v in enumerate(metrics)}
+                for rouge, score in rouges.items()
+            }
+            for uid, rouges in d_accs.items()
+        }
+        with open(os_join(eval_output_path, 'rouge.json'), 'w') as f:
+            json.dump(d_with_rouge_keys, f, indent=4)
 
 
 if __name__ == '__main__':
@@ -627,3 +661,4 @@ if __name__ == '__main__':
         dec = 'answer: cant-answer-sincere'
         mic(lenient(dec))
     check_lenient_dec()
+
