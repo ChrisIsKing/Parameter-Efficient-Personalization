@@ -35,6 +35,8 @@ DEFAULT_PEFT_METHOD = 'lora'
 def parse_args():
     out = get_arg_parser(default_method=DEFAULT_PEFT_METHOD, method_choices=PEFT_METHODS)
     out.test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
+    out.test_parser.add_argument("--use_user_profile", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
+    out.test_parser.add_argument("--is_generative", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
     return out.parser.parse_args()
 
 
@@ -159,7 +161,7 @@ if __name__ == '__main__':
             seed = args.seed
             use_user_profile = args.use_user_profile
             output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='peft')
-
+            is_generative = args.is_generative
             # strt = 23  # goemotion
             # strt = 28  # hatexplain
             # strt = 5021  # `measuringhatespeech.lora`
@@ -171,7 +173,6 @@ if __name__ == '__main__':
             # strt = 366  # `wikidetox`
             # strt = 2687  # wikidetox.p_tuning`
             # strt = '44590228'  # `unhealthyconversations`
-            is_generative = (dataset_name == 'interpersonal')
             strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage if not is_generative else False, seed=seed)
             dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, use_user_profile=use_user_profile, is_generative=is_generative)
@@ -209,7 +210,7 @@ if __name__ == '__main__':
 
                 model = load_model(model_name_or_path=model_name_or_path, peft_method=method, logger_fl=logger_fl)
                 # print('abc123',is_generative,use_user_profile)
-                trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False)
+                trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False, is_generative=is_generative)
                 t_e_ = tm_.end()
                 if not global_tqdm:
                     logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
@@ -223,7 +224,10 @@ if __name__ == '__main__':
             dataset_name, leakage = args.dataset_name, args.leakage
             bsz = args.batch_size
             seed = args.seed
+            print('abc123',args)
+            use_user_profile = args.use_user_profile
             zeroshot = args.zeroshot
+            is_generative = args.is_generative
 
             date = now(fmt='short-date')
             if zeroshot:
@@ -255,10 +259,10 @@ if __name__ == '__main__':
 
             # strt = 29044976  # unhealthyconversations
             strt = None
-            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
-            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, use_user_profile=use_user_profile)
+            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile)
+            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, is_generative=is_generative)
             n_user = len(it)
-            d_log = dict(users=it, label_options=sconfig(f'datasets.{dataset_name}.labels'))
+            d_log = dict(users=it)#, label_options=sconfig(f'datasets.{dataset_name}.labels'))
             logger.info(f'Testing w/ {pl.i(d_log)}...')
             logger_fl.info(f'Testing w/ {d_log}...')
 

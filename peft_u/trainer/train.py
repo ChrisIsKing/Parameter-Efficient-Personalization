@@ -23,6 +23,7 @@ from peft_u.preprocess.load_dataset import *
 import peft_u.util.models as model_util
 
 from torch.cuda.amp import autocast #TODO fp16
+from rouge_score import rouge_scorer
 
 if is_on_adapter():
     from transformers import AdapterTrainer
@@ -63,7 +64,7 @@ dataset_names = list(sconfig('datasets'))
 def _add_args(parser: ArgumentParser) -> ArgumentParser:
     parser.add_argument("--model", type=str, required=False, default=HF_MODEL_NAME)
     parser.add_argument("--dataset_name", type=str, required=True, choices=dataset_names)
-    parser.add_argument("--leakage", type=str, required=False, default=True)
+    parser.add_argument("--leakage", type=lambda x: (str(x).lower() == 'true'), required=False, default=True)
     parser.add_argument("--seed", type=int, required=False, default=42)
     parser.add_argument("--batch_size", type=int, required=False, default=8)
     return parser
@@ -90,6 +91,7 @@ def get_arg_parser(default_method: str = None, method_choices: List[str] = None,
     train_parser.add_argument("--weight_decay", type=float, required=False, default=0.01)
     train_parser.add_argument("--output_dir", type=str, required=False, default=None)
     train_parser.add_argument("--use_user_profile", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
+    train_parser.add_argument("--is_generative", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
     # Run on `cuda` if available, always personalize
     return ArgParser(parser=parser, train_parser=train_parser, test_parser=_add_args(test_parser))
 
@@ -142,7 +144,7 @@ class MyTrainer:
 
     def __call__(
             self, model: torch.nn.Module, dataset: InputEgDataset,
-            user_id: str = None, verbose: bool = False, save_per_epoch: bool = True
+            user_id: str = None, verbose: bool = False, save_per_epoch: bool = True, is_generative: bool = False
     ):
         output_path = os_join(self.output_path, uid2u_str(user_id))
         saver = self.saver_cls(model=model, output_base_path=output_path)
@@ -189,20 +191,16 @@ class MyTrainer:
             for step, batch in it:
                 if torch.cuda.is_available():
                     batch = {k: v.cuda() for k, v in batch.items()}
-                # with autocast(): #TODO fp16
                 outputs = model(**batch)
 
-                # TODO fix -- not learing
                 logits = outputs.logits
                 logits = logits.view(-1, logits.size(-1))
-                loss = torch.nn.CrossEntropyLoss()(logits, torch.flatten(batch['labels']))#outputs.loss
+                if is_generative:
+                    loss = torch.nn.CrossEntropyLoss()(logits, torch.flatten(batch['labels']))
+                else:
+                    loss = outputs.loss
 
-
-                # print('model==\n',model)
-                # print('batch==',batch)
-                # exit(0)
                 loss_item = loss.detach().item()
-                # print('loss_item==',loss_item)
                 total_tr_loss += loss_item
                 loss.backward()
                 optimizer.step()
@@ -566,10 +564,11 @@ class MyTester:
 
     def __call__(
             self, model: Union[PreTrainedModel, PeftModel], dataset: ListDataset = None,
-            user_id: str = None, user_idx: int = None,
+            user_id: str = None, user_idx: int = None, is_generative: bool = True
 
     ) -> float:
-        label_options = sconfig(f'datasets.{self.dataset_name}.labels')
+        if not is_generative:
+            label_options = sconfig(f'datasets.{self.dataset_name}.labels')
         n_sample = len(dataset)
 
         collate_fn = partial(smart_batching_collate, tokenizer=self.tokenizer)
@@ -583,7 +582,11 @@ class MyTester:
 
         ret = None
         n_ba = len(ts_dl)
-        get_pred = GetPredId(label_options=label_options, logger_fl=self.logger_fl)
+        if not is_generative:
+            get_pred = GetPredId(label_options=label_options, logger_fl=self.logger_fl)
+        else:
+            scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+
         for i_ba, inputs in enumerate(it):
             inputs = {k: v for k, v in inputs.items()}
             inputs.pop('labels')
@@ -593,16 +596,25 @@ class MyTester:
                 outputs = model.generate(**inputs, max_new_tokens=128)  # Greedy decoding
             lst_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
-            for i, decoded in enumerate(lst_decoded):
-                i_sample = i_ba * self.batch_size + i
-                out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target(), user_id=user_id)
-                preds[i_sample], trues[i_sample] = out.pred, out.true
+            if not is_generative:
+                for i, decoded in enumerate(lst_decoded):
+                    i_sample = i_ba * self.batch_size + i
+                    out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target(), user_id=user_id)
+                    preds[i_sample], trues[i_sample] = out.pred, out.true
+                if i_ba + 1 == n_ba:  # last iteration
+                    ret = test_user_update_postfix_n_write_df(
+                        label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
+                        df_out_path=os_join(self.eval_output_path, f'{uid2u_str(user_id)}.csv')
+                    )
+            else:
+                for i, decoded in enumerate(lst_decoded):
+                    i_sample = i_ba * self.batch_size + i
+                    if not is_generative:
+                        out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target(), user_id=user_id)
+                        preds[i_sample], trues[i_sample] = out.pred, out.true
+                    else:
+                        ret = scorer.score(dataset[i_sample].label[0], decoded)
 
-            if i_ba + 1 == n_ba:  # last iteration
-                ret = test_user_update_postfix_n_write_df(
-                    label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
-                    df_out_path=os_join(self.eval_output_path, f'{uid2u_str(user_id)}.csv')
-                )
         return ret
 
 

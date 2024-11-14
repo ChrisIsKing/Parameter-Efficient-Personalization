@@ -120,8 +120,8 @@ def load_dataset_with_prompts(
     """
     ret = dict()
 
-    text_col = 'text' if not is_generative else 'question'
-    label_col = 'label' if not is_generative else 'answer'
+    text_col = 'text' if not is_generative else ('question' if dataset_name != 'goodreads' else 'book_description')
+    label_col = 'label' if not is_generative else ('answer' if dataset_name != 'goodreads' else 'review')
     instruction = sconfig(f'datasets.{dataset_name}.instruction') if not is_generative else None
     dset = _load_dataset(dataset_name=dataset_name, leakage=leakage)
     user_profiles = _load_user_profiles(dataset_name=dataset_name) if use_user_profile else None
@@ -161,7 +161,6 @@ def load_dataset_with_prompts(
                     txts_selected = random.sample(txts, k=min(example_count, len(txts)))
                     prompt_egs += [(txt, lb) for txt in txts_selected]
                 prompt_egs = prompt_egs[:max_example_count]  # keep only first `max_example_count` examples
-
                 lst.append(
                     InputExample(guid=sid, instruction=instruction, text=text, prompt_examples=prompt_egs, label=label, user_profile=user_profiles[uid] if user_profiles else None)
                 )
@@ -186,6 +185,8 @@ _USER_IDS = Union[List[str], List[int]]
 hex_pattern = re.compile(r'^[0-9a-f]+$')
 # For `SubjectiveDiscourse`, user ids are like `worker_50`
 sub_dis_pattern = re.compile(r'^worker_(?P<id>\d+)$')
+# For `TweetEval`, user ids are like `label_M_1`
+tweeteval_pattern = re.compile(r'^label_._(?P<id>\d+)$')
 
 
 def sort_user_ids(uids: _USER_IDS) -> _USER_IDS:
@@ -199,6 +200,11 @@ def sort_user_ids(uids: _USER_IDS) -> _USER_IDS:
         elif all(hex_pattern.match(uid) is not None for uid in uids):
             def sort_fn(x):
                 return int(x, 16)
+        elif all(tweeteval_pattern.match(uid) is not None for uid in uids):
+            def sort_fn(x):
+                match = tweeteval_pattern.match(x)
+                assert match is not None
+                return int(match.group('id'))
         else:
             def sort_fn(x):
                 match = sub_dis_pattern.match(x)
