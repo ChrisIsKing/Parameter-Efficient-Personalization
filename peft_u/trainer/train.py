@@ -564,7 +564,7 @@ class MyTester:
 
     def __call__(
             self, model: Union[PreTrainedModel, PeftModel], dataset: ListDataset = None,
-            user_id: str = None, user_idx: int = None, is_generative: bool = True
+            user_id: str = None, user_idx: int = None, is_generative: bool = False
 
     ) -> float:
         if not is_generative:
@@ -620,14 +620,35 @@ class MyTester:
 
 def log_n_save_test_results(
         d_accs: Dict[str, float] = None, dataset_name: str = None, logger_fl: Logger = None,
-        eval_output_path: str = None
+        eval_output_path: str = None, is_generative: bool = False
 ):
-    acc_avg = np.mean(list(d_accs.values()))
-    acc_avg_str = f'{acc_avg * 100:.1f}'
-    logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg_str)}')
-    logger_fl.info(f'Dataset {dataset_name} macro-avg acc: {acc_avg_str}')
-    with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
-        json.dump(d_accs, f, indent=4)
+    if not is_generative:
+        acc_avg = np.mean(list(d_accs.values()))
+        acc_avg_str = f'{acc_avg * 100:.1f}'
+        logger.info(f'Dataset {pl.i(dataset_name)} macro-avg acc: {pl.i(acc_avg_str)}')
+        logger_fl.info(f'Dataset {dataset_name} macro-avg acc: {acc_avg_str}')
+        with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
+            json.dump(d_accs, f, indent=4)
+    else:
+        rouges = list(d_accs.values())[0].keys()
+        metrics = ['precision','recall','fmeasure']
+        rouge_avg = {}
+        for rouge in rouges:
+            rouge_avg[rouge] = {}
+            for metric_idx in range(len(metrics)):
+                rouge_avg[rouge][metrics[metric_idx]] = f'{np.mean([score[rouge][metric_idx] for score in list(d_accs.values())]) * 100:.1f}'
+        logger.info(f'Dataset {pl.i(dataset_name)} macro-avg rouge:\n{pl.i(rouge_avg)}')
+        logger_fl.info(f'Dataset {dataset_name} macro-avg rouge:\n{rouge_avg}')
+
+        d_with_rouge_keys = {
+            uid: {
+                rouge: {v: score[i] for i,v in enumerate(metrics)}
+                for rouge, score in rouges.items()
+            }
+            for uid, rouges in d_accs.items()
+        }
+        with open(os_join(eval_output_path, 'rouge.json'), 'w') as f:
+            json.dump(d_with_rouge_keys, f, indent=4)
 
 
 if __name__ == '__main__':

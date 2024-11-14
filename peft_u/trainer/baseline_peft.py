@@ -276,19 +276,20 @@ if __name__ == '__main__':
                 torch.cuda.empty_cache()
                 ts = ListDataset(dset[uid].test)
 
+                path = os_join(model_name_or_path, uid2u_str(uid), 'trained')
+                if len(ts) == 0 or not os.path.exists(path):
+                    logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
+                    continue
+                    
                 if not zeroshot:  # load trained model for each user
-                    path = os_join(model_name_or_path, uid2u_str(uid), 'trained')
-                    assert os.path.exists(path)  # sanity check
+                    # assert os.path.exists(path)  # sanity check
                     model, tokenizer = load_trained(model_name_or_path=path)
-                # if len(ts) == 0:
-                #     logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
-                #     continue
 
-                accs[uid] = tester(model=model, dataset=ts, user_id=uid, user_idx=i)
+                accs[uid] = tester(model=model, dataset=ts, user_id=uid, user_idx=i, is_generative=is_generative)
                 if not zeroshot:
                     model.cpu()  # move to CPU then collect memory, otherwise CUDA OOM error
                     gc.collect()
-            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path)
+            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path, is_generative=is_generative)
             train_util.log_n_save_test_results(dataset_name=dataset_name, **out_args)
 
             t_e = tm.end()
