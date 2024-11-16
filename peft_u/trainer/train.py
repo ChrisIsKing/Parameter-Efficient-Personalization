@@ -91,7 +91,7 @@ def get_arg_parser(default_method: str = None, method_choices: List[str] = None,
     train_parser.add_argument("--weight_decay", type=float, required=False, default=0.01)
     train_parser.add_argument("--output_dir", type=str, required=False, default=None)
     train_parser.add_argument("--use_user_profile", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
-    train_parser.add_argument("--is_generative", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
+    # train_parser.add_argument("--is_generative", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
     # Run on `cuda` if available, always personalize
     return ArgParser(parser=parser, train_parser=train_parser, test_parser=_add_args(test_parser))
 
@@ -564,11 +564,12 @@ class MyTester:
 
     def __call__(
             self, model: Union[PreTrainedModel, PeftModel], dataset: ListDataset = None,
-            user_id: str = None, user_idx: int = None, is_generative: bool = False
+            user_id: str = None, user_idx: int = None
 
     ) -> float:
-        if not is_generative:
-            label_options = sconfig(f'datasets.{self.dataset_name}.labels')
+        is_generative = sconfig(f'datasets.{self.dataset_name}.is_generative')
+        label_options = sconfig(f'datasets.{self.dataset_name}.labels') if not is_generative else None
+
         n_sample = len(dataset)
 
         collate_fn = partial(smart_batching_collate, tokenizer=self.tokenizer)

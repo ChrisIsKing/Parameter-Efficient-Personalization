@@ -105,7 +105,7 @@ def _load_user_profiles(dataset_name: str = None) -> Dict:
 
 def load_dataset_with_prompts(
         dataset_name: str, leakage: bool = False,
-        example_count: int = 1, max_example_count: int = 3, per_user: bool = True, seed: int = 42, use_user_profile: bool = False, is_generative: bool = False
+        example_count: int = 1, max_example_count: int = 3, per_user: bool = True, seed: int = 42, use_user_profile: bool = False
 ) -> Union[InputEgDataset, Dict[str, InputEgDataset]]:
     """
     Process data for few-shot learning
@@ -119,7 +119,8 @@ def load_dataset_with_prompts(
     :param seed: random seed for sampling prompt examples
     """
     ret = dict()
-
+    
+    is_generative = sconfig(f'datasets.{dataset_name}.is_generative')
     text_col = 'text' if not is_generative else ('question' if dataset_name != 'goodreads' else 'book_description')
     label_col = 'label' if not is_generative else ('answer' if dataset_name != 'goodreads' else 'review')
     instruction = sconfig(f'datasets.{dataset_name}.instruction') if not is_generative else None

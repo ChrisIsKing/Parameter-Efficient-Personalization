@@ -213,6 +213,8 @@ if __name__ == '__main__':
             seed = args.seed
             use_user_profile = args.use_user_profile
             output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='adapter')
+            is_generative = sconfig(f'datasets.{dataset_name}.is_generative')
+            leakage = leakage if not is_generative else False # force no leakage for generative
 
             tokenizer = get_tokenizer(model_name_or_path=model_name_or_path)
 
@@ -271,6 +273,9 @@ if __name__ == '__main__':
             dataset_name, leakage = args.dataset_name, args.leakage
             bsz = args.batch_size
             seed = args.seed
+            use_user_profile = args.use_user_profile
+            is_generative = sconfig(f'datasets.{dataset_name}.is_generative')
+            leakage = leakage if not is_generative else False # force no leakage for generative
 
             date = now(fmt='short-date')
             eval_output_path = os_join(u.proj_path, 'eval', f'{model_name_or_path}_Eval-{date}' if not use_user_profile else f'{model_name_or_path}__UserProfile-Eval-{date}')
@@ -337,7 +342,7 @@ if __name__ == '__main__':
                             label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
                             df_out_path=os_join(eval_output_path, f'{user_str}.csv')
                         )
-            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path)
+            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path, is_generative=is_generative)
             train_util.log_n_save_test_results(dataset_name=dataset_name, **out_args)
 
             t_e_ = tm_.end()
