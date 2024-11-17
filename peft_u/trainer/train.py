@@ -631,13 +631,16 @@ def log_n_save_test_results(
         with open(os_join(eval_output_path, 'accuracies.json'), 'w') as f:
             json.dump(d_accs, f, indent=4)
     else:
-        rouges = list(d_accs.values())[0].keys()
-        metrics = ['precision','recall','fmeasure']
-        rouge_avg = {}
-        for rouge in rouges:
-            rouge_avg[rouge] = {}
-            for metric_idx in range(len(metrics)):
-                rouge_avg[rouge][metrics[metric_idx]] = f'{np.mean([score[rouge][metric_idx] for score in list(d_accs.values())]) * 100:.1f}'
+        if len(d_accs.values()) > 0:
+            rouges = list(d_accs.values())[0].keys()
+            metrics = ['precision','recall','fmeasure']
+            rouge_avg = {}
+            for rouge in rouges:
+                rouge_avg[rouge] = {}
+                for metric_idx in range(len(metrics)):
+                    rouge_avg[rouge][metrics[metric_idx]] = f'{np.mean([score[rouge][metric_idx] for score in list(d_accs.values())]) * 100:.1f}'
+        else:
+            rouge_avg = None
         logger.info(f'Dataset {pl.i(dataset_name)} macro-avg rouge:\n{pl.i(rouge_avg)}')
         logger_fl.info(f'Dataset {dataset_name} macro-avg rouge:\n{rouge_avg}')
 

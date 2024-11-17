@@ -285,7 +285,7 @@ if __name__ == '__main__':
                     # assert os.path.exists(path)  # sanity check
                     model, tokenizer = load_trained(model_name_or_path=path)
 
-                accs[uid] = tester(model=model, dataset=ts, user_id=uid, user_idx=i, is_generative=is_generative)
+                accs[uid] = tester(model=model, dataset=ts, user_id=uid, user_idx=i)
                 if not zeroshot:
                     model.cpu()  # move to CPU then collect memory, otherwise CUDA OOM error
                     gc.collect()

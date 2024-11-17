@@ -1,0 +1,173 @@
+2024-11-16 11:06:18,091 - INFO - Training params: {'method': 'prefix', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8}
+2024-11-16 11:08:27,447 - INFO - Failed for cockamamie
+2024-11-16 11:08:27,847 - INFO - Failed for judaism
+2024-11-16 11:08:32,571 - INFO - Failed for workplace
+2024-11-16 11:08:32,614 - INFO - Failed for parenting
+2024-11-16 11:08:32,869 - INFO - Failed for philosophy
+2024-11-16 11:08:32,982 - INFO - Failed for gabhate
+2024-11-16 11:10:09,324 - INFO - Training params: {'method': 'prefix', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8}
+2024-11-16 12:06:38,761 - INFO - Training params: {'method': 'prefix', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8}
+2024-11-16 12:07:53,858 - INFO - Training params: {'method': 'prefix', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8}
+2024-11-16 12:15:58,527 - INFO - Training params: {'method': 'prefix', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8}
+2024-11-16 12:16:48,226 - INFO - Failed for travel
+2024-11-16 12:16:48,594 - INFO - Failed for interpersonal
+2024-11-16 12:16:48,676 - INFO - Failed for wikidetox
+2024-11-16 12:16:49,019 - INFO - Failed for unhealthyconversations
+2024-11-16 12:16:49,354 - INFO - Failed for goodreads
+2024-11-16 12:16:49,416 - INFO - Failed for subjectivediscourse
+2024-11-16 12:16:49,586 - INFO - Failed for tweeteval
+2024-11-16 12:16:49,766 - INFO - Failed for epic
+2024-11-16 12:16:50,086 - INFO - Failed for cockamamie
+2024-11-16 12:16:55,491 - INFO - Failed for judaism
+2024-11-16 12:16:55,770 - INFO - Failed for workplace
+2024-11-16 12:16:56,033 - INFO - Failed for parenting
+2024-11-16 12:16:56,493 - INFO - Failed for subjectivediscourse_response
+2024-11-16 12:16:56,802 - INFO - Failed for philosophy
+2024-11-16 12:16:57,077 - INFO - Failed for gabhate
+2024-11-16 12:16:57,359 - INFO - Failed for subjectivediscourse_response_sentiment
+2024-11-16 12:19:05,370 - INFO - Training params: {'method': 'prefix', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8}
+2024-11-16 12:22:29,080 - INFO - Failed for cockamamie
+2024-11-16 12:22:29,343 - INFO - Failed for judaism
+2024-11-16 12:22:29,752 - INFO - Failed for workplace
+2024-11-16 12:22:30,124 - INFO - Failed for parenting
+2024-11-16 12:22:30,463 - INFO - Failed for subjectivediscourse_response
+2024-11-16 12:22:30,570 - INFO - Failed for philosophy
+2024-11-16 12:22:30,646 - INFO - Failed for gabhate
+2024-11-16 12:22:30,723 - INFO - Failed for subjectivediscourse_response_sentiment
+2024-11-16 12:42:16,404 - INFO - Training params: {'method': 'prefix', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8}
+2024-11-16 12:42:18,652 - INFO - Failed for goemotion
+2024-11-16 12:42:19,061 - INFO - Failed for hatexplain
+2024-11-16 12:42:19,085 - INFO - Failed for subjectivediscourse_question_sentiment
+2024-11-16 12:42:19,463 - INFO - Failed for worldbuilding
+2024-11-16 12:43:06,733 - INFO - Training params: {'method': 'prefix', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8}
+2024-11-16 12:48:26,329 - INFO - Training params: {'method': 'prefix', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8}
+2024-11-16 12:48:29,397 - INFO - Failed for hatexplain
+2024-11-16 12:48:29,444 - INFO - Failed for subjectivediscourse_question_sentiment
+2024-11-16 12:48:29,706 - INFO - Failed for worldbuilding
+2024-11-16 12:48:30,148 - INFO - Failed for studemo
+2024-11-16 12:48:33,390 - INFO - Failed for interpersonal
+2024-11-16 12:48:33,433 - INFO - Failed for wikidetox
+2024-11-16 12:48:33,705 - INFO - Failed for unhealthyconversations
+2024-11-16 12:48:33,949 - INFO - Failed for goodreads
+2024-11-16 12:48:34,121 - INFO - Failed for subjectivediscourse
+2024-11-16 12:48:34,239 - INFO - Failed for tweeteval
+2024-11-16 12:48:34,374 - INFO - Failed for epic
+2024-11-16 12:48:34,501 - INFO - Failed for cockamamie
+2024-11-16 12:48:34,651 - INFO - Failed for judaism
+2024-11-16 12:48:34,763 - INFO - Failed for workplace
+2024-11-16 12:48:35,279 - INFO - Failed for parenting
+2024-11-16 12:48:35,337 - INFO - Failed for subjectivediscourse_response
+2024-11-16 12:48:35,429 - INFO - Failed for philosophy
+2024-11-16 12:48:35,512 - INFO - Failed for gabhate
+2024-11-16 12:48:35,588 - INFO - Failed for subjectivediscourse_response_sentiment
+2024-11-16 12:48:45,767 - INFO - Training params: {'method': 'prefix', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8}
+2024-11-16 12:49:56,665 - INFO - Failed for interpersonal
+2024-11-16 12:49:56,934 - INFO - Failed for wikidetox
+2024-11-16 12:49:57,497 - INFO - Failed for unhealthyconversations
+2024-11-16 12:49:57,523 - INFO - Failed for goodreads
+2024-11-16 12:49:57,637 - INFO - Failed for subjectivediscourse
+2024-11-16 12:49:57,696 - INFO - Failed for tweeteval
+2024-11-16 12:49:57,781 - INFO - Failed for epic
+2024-11-16 12:49:57,880 - INFO - Failed for cockamamie
+2024-11-16 12:49:57,947 - INFO - Failed for judaism
+2024-11-16 12:49:58,031 - INFO - Failed for workplace
+2024-11-16 12:49:58,130 - INFO - Failed for parenting
+2024-11-16 12:49:58,195 - INFO - Failed for subjectivediscourse_response
+2024-11-16 12:49:58,296 - INFO - Failed for philosophy
+2024-11-16 12:49:58,370 - INFO - Failed for gabhate
+2024-11-16 12:49:58,453 - INFO - Failed for subjectivediscourse_response_sentiment
+2024-11-16 12:58:30,069 - INFO - Training params: {'method': 'prefix', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8}
+2024-11-16 13:55:58,248 - INFO - Failed for goemotion
+2024-11-16 13:55:58,725 - INFO - Failed for hatexplain
+2024-11-16 13:55:58,826 - INFO - Failed for subjectivediscourse_question_sentiment
+2024-11-16 13:55:58,967 - INFO - Failed for worldbuilding
+2024-11-16 13:55:59,612 - INFO - Failed for studemo
+2024-11-16 13:55:59,893 - INFO - Failed for travel
+2024-11-16 13:56:00,316 - INFO - Failed for interpersonal
+2024-11-16 13:56:00,394 - INFO - Failed for wikidetox
+2024-11-16 13:56:00,699 - INFO - Failed for unhealthyconversations
+2024-11-16 13:56:01,025 - INFO - Failed for goodreads
+2024-11-16 13:56:01,595 - INFO - Failed for subjectivediscourse
+2024-11-16 13:56:01,628 - INFO - Failed for tweeteval
+2024-11-16 13:56:01,712 - INFO - Failed for epic
+2024-11-16 13:56:01,796 - INFO - Failed for cockamamie
+2024-11-16 13:56:01,879 - INFO - Failed for judaism
+2024-11-16 13:56:01,985 - INFO - Failed for workplace
+2024-11-16 13:56:02,062 - INFO - Failed for parenting
+2024-11-16 13:56:02,120 - INFO - Failed for subjectivediscourse_response
+2024-11-16 13:56:02,212 - INFO - Failed for philosophy
+2024-11-16 13:56:02,295 - INFO - Failed for gabhate
+2024-11-16 13:56:02,385 - INFO - Failed for subjectivediscourse_response_sentiment
+2024-11-16 17:12:10,814 - INFO - Training params: {'method': 'prefix', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}
+2024-11-16 19:23:00,471 - INFO - Training params: {'method': 'lora', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}
+2024-11-16 20:18:17,253 - INFO - Training params: {'method': 'p_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}
+2024-11-17 11:56:13,166 - INFO - Training params: {'method': 'p_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}
+2024-11-17 11:56:13,167 - INFO - Failed prep for goemotion
+2024-11-17 11:56:13,167 - INFO - Failed prep for hatexplain
+2024-11-17 11:56:13,168 - INFO - Failed prep for subjectivediscourse_question_sentiment
+2024-11-17 11:56:13,168 - INFO - Failed prep for worldbuilding
+2024-11-17 11:56:13,168 - INFO - Failed prep for studemo
+2024-11-17 11:56:13,169 - INFO - Failed prep for travel
+2024-11-17 11:56:13,169 - INFO - Failed prep for interpersonal
+2024-11-17 11:56:13,170 - INFO - Failed prep for wikidetox
+2024-11-17 11:56:13,170 - INFO - Failed prep for unhealthyconversations
+2024-11-17 11:56:13,171 - INFO - Failed prep for goodreads
+2024-11-17 11:56:13,171 - INFO - Failed prep for subjectivediscourse
+2024-11-17 11:56:13,172 - INFO - Failed prep for tweeteval
+2024-11-17 11:56:13,172 - INFO - Failed prep for epic
+2024-11-17 11:56:13,173 - INFO - Failed prep for cockamamie
+2024-11-17 11:56:13,173 - INFO - Failed prep for judaism
+2024-11-17 11:56:13,173 - INFO - Failed prep for workplace
+2024-11-17 11:56:13,174 - INFO - Failed prep for parenting
+2024-11-17 11:56:13,174 - INFO - Failed prep for subjectivediscourse_response
+2024-11-17 11:56:13,175 - INFO - Failed prep for philosophy
+2024-11-17 11:56:13,175 - INFO - Failed prep for gabhate
+2024-11-17 11:56:13,176 - INFO - Failed prep for subjectivediscourse_response_sentiment
+2024-11-17 11:56:52,262 - INFO - Training params: {'method': 'p_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}
+2024-11-17 11:56:52,262 - INFO - Failed prep for goemotion
+2024-11-17 11:56:52,263 - INFO - Failed prep for hatexplain
+2024-11-17 11:56:52,263 - INFO - Failed prep for subjectivediscourse_question_sentiment
+2024-11-17 11:56:52,264 - INFO - Failed prep for worldbuilding
+2024-11-17 11:56:52,264 - INFO - Failed prep for studemo
+2024-11-17 11:56:52,265 - INFO - Failed prep for travel
+2024-11-17 11:56:52,265 - INFO - Failed prep for interpersonal
+2024-11-17 11:56:52,266 - INFO - Failed prep for wikidetox
+2024-11-17 11:56:52,266 - INFO - Failed prep for unhealthyconversations
+2024-11-17 11:56:52,266 - INFO - Failed prep for goodreads
+2024-11-17 11:56:52,267 - INFO - Failed prep for subjectivediscourse
+2024-11-17 11:56:52,267 - INFO - Failed prep for tweeteval
+2024-11-17 11:56:52,268 - INFO - Failed prep for epic
+2024-11-17 11:56:52,268 - INFO - Failed prep for cockamamie
+2024-11-17 11:56:52,269 - INFO - Failed prep for judaism
+2024-11-17 11:56:52,269 - INFO - Failed prep for workplace
+2024-11-17 11:56:52,269 - INFO - Failed prep for parenting
+2024-11-17 11:56:52,270 - INFO - Failed prep for subjectivediscourse_response
+2024-11-17 11:56:52,270 - INFO - Failed prep for philosophy
+2024-11-17 11:56:52,271 - INFO - Failed prep for gabhate
+2024-11-17 11:56:52,271 - INFO - Failed prep for subjectivediscourse_response_sentiment
+2024-11-17 11:57:33,850 - INFO - Training params: {'method': 'p_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}
+2024-11-17 11:57:33,851 - INFO - Failed prep for goemotion
+2024-11-17 11:57:33,852 - INFO - Failed prep for hatexplain
+2024-11-17 11:57:33,852 - INFO - Failed prep for subjectivediscourse_question_sentiment
+2024-11-17 11:57:33,853 - INFO - Failed prep for worldbuilding
+2024-11-17 11:57:33,853 - INFO - Failed prep for studemo
+2024-11-17 11:57:33,853 - INFO - Failed prep for travel
+2024-11-17 11:57:33,854 - INFO - Failed prep for interpersonal
+2024-11-17 11:57:33,854 - INFO - Failed prep for wikidetox
+2024-11-17 11:57:33,855 - INFO - Failed prep for unhealthyconversations
+2024-11-17 11:57:33,855 - INFO - Failed prep for goodreads
+2024-11-17 11:57:33,856 - INFO - Failed prep for subjectivediscourse
+2024-11-17 11:57:33,856 - INFO - Failed prep for tweeteval
+2024-11-17 11:57:33,856 - INFO - Failed prep for epic
+2024-11-17 11:57:33,857 - INFO - Failed prep for cockamamie
+2024-11-17 11:57:33,857 - INFO - Failed prep for judaism
+2024-11-17 11:57:33,858 - INFO - Failed prep for workplace
+2024-11-17 11:57:33,858 - INFO - Failed prep for parenting
+2024-11-17 11:57:33,859 - INFO - Failed prep for subjectivediscourse_response
+2024-11-17 11:57:33,859 - INFO - Failed prep for philosophy
+2024-11-17 11:57:33,859 - INFO - Failed prep for gabhate
+2024-11-17 11:57:33,860 - INFO - Failed prep for subjectivediscourse_response_sentiment
+2024-11-17 11:57:55,744 - INFO - Training params: {'method': 'p_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}
+2024-11-17 11:58:12,449 - INFO - Training params: {'method': 'p_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}
+2024-11-17 11:58:39,414 - INFO - Training params: {'method': 'p_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}
+2024-11-17 11:58:54,117 - INFO - Training params: {'method': 'p_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}

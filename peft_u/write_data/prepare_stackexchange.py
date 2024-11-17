@@ -1,4 +1,6 @@
+import os
 from os.path import join as os_join
+import fnmatch
 from collections import defaultdict
 
 from peft_u.util import *
@@ -13,7 +15,13 @@ if __name__ == '__main__':
     substack = sys.argv[1]
 
     dset_base_path = os_join(u.proj_path, u.dset_dir, substack)#f'{substack}.stackexchange.com')
-    data, headers = load_csv(os_join(dset_base_path, f'{substack}.csv'), delimiter=',', header=True)
+
+    csv_files = [f for f in os.listdir(dset_base_path) if fnmatch.fnmatch(f, f"{substack}*.csv")]
+    data, headers = load_csv(os_join(dset_base_path, csv_files[0]), delimiter=',', header=True)
+    if len(csv_files) > 1:
+        for csv_file in csv_files[1:]:
+            next_data, headers = load_csv(os_join(dset_base_path, csv_file), delimiter=',', header=True)
+            data += next_data
 
     # label_map = {0: 'Non-hateful', 1: 'Hateful'}
     user_data = defaultdict(dict)

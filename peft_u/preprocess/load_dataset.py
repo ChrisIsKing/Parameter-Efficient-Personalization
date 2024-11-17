@@ -95,7 +95,7 @@ def _load_dataset(dataset_name: str = None, leakage: bool = False) -> Personaliz
     return data
 
 def _load_user_profiles(dataset_name: str = None) -> Dict:
-    data_path = os_join(u.proj_path, 'user_context/profiles_n20', dataset_name, 'profiles.csv')
+    data_path = os_join(u.proj_path, 'user_context/profiles_n20', dataset_name.split('_',1)[0], 'profiles.csv')
     data = {}
     with open(data_path, mode='r') as f:
         reader = csv.DictReader(f)
