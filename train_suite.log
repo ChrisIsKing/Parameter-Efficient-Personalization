@@ -171,3 +171,4 @@
 2024-11-17 11:58:12,449 - INFO - Training params: {'method': 'p_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}
 2024-11-17 11:58:39,414 - INFO - Training params: {'method': 'p_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}
 2024-11-17 11:58:54,117 - INFO - Training params: {'method': 'p_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}
+2024-11-17 12:03:51,074 - INFO - Training params: {'method': 'p_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 4}

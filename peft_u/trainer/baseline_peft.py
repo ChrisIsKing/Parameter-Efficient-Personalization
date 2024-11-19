@@ -46,7 +46,7 @@ def load_model(
     log = model_util.LoadModelLogging(logger=logger, logger_fl=logger_fl, verbose=verbose)
     cache_dir = log.get_n_log_cache_dir(model_name_or_path=model_name_or_path)
 
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)#, torch_dtype=torch.bfloat16) #TODO fp16)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
 
     if peft_method is not None:
         ca.check_mismatch('PEFT method', peft_method, PEFT_METHODS)
@@ -107,7 +107,7 @@ def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple
         logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
 
     config = PeftConfig.from_pretrained(model_name_or_path)
-    model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir)
+    model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
     model = PeftModel.from_pretrained(model, model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
 
