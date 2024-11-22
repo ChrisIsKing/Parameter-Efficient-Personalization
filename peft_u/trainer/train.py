@@ -190,8 +190,9 @@ class MyTrainer:
             it = tqdm(enumerate(train_dataloader, start=1), desc=tr_desc, total=n_step_per_epoch)
             for step, batch in it:
                 if torch.cuda.is_available():
-                    batch = {k: v.cuda() for k, v in batch.items()}
-                outputs = model(**batch)
+                    batch = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in batch.items()}
+                with autocast(dtype=torch.bfloat16):
+                    outputs = model(**batch)
 
                 logits = outputs.logits
                 logits = logits.view(-1, logits.size(-1))
@@ -223,9 +224,10 @@ class MyTrainer:
             eval_epoch_loss = None
             for step, batch in it:
                 if torch.cuda.is_available():
-                    batch = {k: v.cuda() for k, v in batch.items()}
+                    batch = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in batch.items()}
                 with torch.no_grad():
-                    outputs = model(**batch)
+                    with autocast(dtype=torch.bfloat16):
+                        outputs = model(**batch)
                 cum_eval_loss += outputs.loss.detach().item()
 
                 decoded = self.tokenizer.batch_decode(
