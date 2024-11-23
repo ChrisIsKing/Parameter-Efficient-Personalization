@@ -76,3 +76,4 @@ Werkzeug==2.3.6
 wheel==0.38.4
 xxhash==3.2.0
 yarl==1.9.2
+rouge_score==0.1.2

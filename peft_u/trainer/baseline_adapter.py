@@ -113,6 +113,7 @@ def get_train_meta(
         output_dir=output_path,
         do_train=True,
         do_eval=True,
+        fp16=True,
         optim=OptimizerNames.ADAMW_TORCH,
         learning_rate=args.learning_rate,
         lr_scheduler_type=SchedulerType.LINEAR,  # same w/ adapter baseline
@@ -146,14 +147,14 @@ def get_train_meta(
 def load_t5_model_with_lm_head(
         model_name_or_path: str = HF_MODEL_NAME, dummy_hf_model_name: str = HF_MODEL_NAME
 ) -> T5AdapterModel:
-    model = T5AdapterModel.from_pretrained(model_name_or_path)  # Should observe a warning on `lm_head.weight` not used
+    model = T5AdapterModel.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16)  # Should observe a warning on `lm_head.weight` not used
 
     # Use a different name so that the LM head is frozen & will not be saved to disk
     model.add_seq2seq_lm_head(head_name='__LM-Head-Frozen__')
 
     # Since there's not a LM head version of `T5AdapterModel`,
     # use the LM head from the HF model and set it to frozen, i.e. override `train_adapter` on the LM head
-    model_dummy = AutoModelForSeq2SeqLM.from_pretrained(dummy_hf_model_name)
+    model_dummy = AutoModelForSeq2SeqLM.from_pretrained(dummy_hf_model_name, torch_dtype=torch.bfloat16)
     state_d = model_dummy.lm_head.state_dict()
     assert set(state_d.keys()) == {'weight'}  # sanity check
     pretrained_lm_weight = state_d['weight']
@@ -246,7 +247,7 @@ if __name__ == '__main__':
                 train_args, logger_fl_, output_path_ = get_train_meta(args=args, output_path=output_path, user_id=uid)
                 trainer = train_util.MyAdapterTrainer(
                     logger_fl=logger_fl_, model=model, args=train_args, tokenizer=tokenizer,
-                    train_dataset=dset['train'], eval_dataset=dset['validation']
+                    train_dataset=dset['train'], eval_dataset=dset['validation'],
                 )
 
                 user_str_ordinal = train_util.get_user_str_w_ordinal(user_id=uid, user_idx=i, n_user=n_user)
