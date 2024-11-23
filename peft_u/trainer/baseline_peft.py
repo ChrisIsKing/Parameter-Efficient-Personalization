@@ -277,7 +277,7 @@ if __name__ == '__main__':
                 ts = ListDataset(dset[uid].test)
 
                 path = os_join(model_name_or_path, uid2u_str(uid), 'trained')
-                if len(ts) == 0 or not os.path.exists(path):
+                if len(ts) == 0 or (not zeroshot and not os.path.exists(path)):
                     logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
                     continue
                     

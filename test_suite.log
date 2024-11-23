@@ -1,0 +1,63 @@
+2024-11-23 18:14:56,822 - INFO - Testing params: {'method': 'prompt_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 8}
+2024-11-23 18:15:09,376 - INFO - Failed test for gabhate
+2024-11-23 18:15:09,512 - INFO - Failed test for judaism
+2024-11-23 18:15:09,603 - INFO - Failed test for subjectivediscourse_response_sentiment
+2024-11-23 18:15:09,753 - INFO - Failed test for interpersonal
+2024-11-23 18:15:10,304 - INFO - Failed test for tweeteval
+2024-11-23 18:15:10,515 - INFO - Failed test for parenting
+2024-11-23 18:15:11,066 - INFO - Failed test for travel
+2024-11-23 18:15:11,167 - INFO - Failed test for subjectivediscourse_response
+2024-11-23 18:15:11,249 - INFO - Failed test for subjectivediscourse_question_sentiment
+2024-11-23 18:15:11,331 - INFO - Failed test for epic
+2024-11-23 18:15:11,420 - INFO - Failed test for studemo
+2024-11-23 18:15:11,503 - INFO - Failed test for philosophy
+2024-11-23 18:15:15,164 - INFO - Testing params: {'method': 'prompt_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 8}
+2024-11-23 18:15:35,890 - INFO - Failed test for subjectivediscourse_response_sentiment
+2024-11-23 18:15:35,952 - INFO - Failed test for interpersonal
+2024-11-23 18:15:36,141 - INFO - Failed test for tweeteval
+2024-11-23 18:15:36,233 - INFO - Failed test for parenting
+2024-11-23 18:15:36,373 - INFO - Failed test for travel
+2024-11-23 18:15:36,519 - INFO - Failed test for subjectivediscourse_response
+2024-11-23 18:15:36,704 - INFO - Failed test for subjectivediscourse_question_sentiment
+2024-11-23 18:15:36,803 - INFO - Failed test for epic
+2024-11-23 18:15:36,960 - INFO - Failed test for studemo
+2024-11-23 18:15:37,079 - INFO - Failed test for philosophy
+2024-11-23 18:15:47,414 - INFO - Testing params: {'method': 'prompt_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 8}
+2024-11-23 18:16:07,923 - INFO - Failed test for goemotion
+2024-11-23 18:16:08,132 - INFO - Failed test for gabhate
+2024-11-23 18:16:08,305 - INFO - Failed test for judaism
+2024-11-23 18:16:08,831 - INFO - Failed test for subjectivediscourse_response_sentiment
+2024-11-23 18:16:08,929 - INFO - Failed test for interpersonal
+2024-11-23 18:16:09,163 - INFO - Failed test for tweeteval
+2024-11-23 18:16:09,720 - INFO - Failed test for parenting
+2024-11-23 18:16:09,818 - INFO - Failed test for travel
+2024-11-23 18:16:09,918 - INFO - Failed test for subjectivediscourse_response
+2024-11-23 18:16:09,985 - INFO - Failed test for subjectivediscourse_question_sentiment
+2024-11-23 18:16:10,073 - INFO - Failed test for epic
+2024-11-23 18:16:10,218 - INFO - Failed test for studemo
+2024-11-23 18:16:10,218 - INFO - Failed test for philosophy
+2024-11-23 18:16:12,074 - INFO - Testing params: {'method': 'prompt_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 8}
+2024-11-23 18:16:43,851 - INFO - Failed test for gabhate
+2024-11-23 18:16:44,030 - INFO - Failed test for judaism
+2024-11-23 18:16:44,228 - INFO - Failed test for subjectivediscourse_response_sentiment
+2024-11-23 18:16:44,366 - INFO - Failed test for interpersonal
+2024-11-23 18:16:44,569 - INFO - Failed test for tweeteval
+2024-11-23 18:16:44,727 - INFO - Failed test for parenting
+2024-11-23 18:16:45,273 - INFO - Failed test for travel
+2024-11-23 18:16:45,393 - INFO - Failed test for subjectivediscourse_response
+2024-11-23 18:16:45,464 - INFO - Failed test for subjectivediscourse_question_sentiment
+2024-11-23 18:16:45,585 - INFO - Failed test for epic
+2024-11-23 18:16:45,624 - INFO - Failed test for studemo
+2024-11-23 18:16:45,777 - INFO - Failed test for philosophy
+2024-11-23 18:16:46,827 - INFO - Testing params: {'method': 'prompt_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 8}
+2024-11-23 18:17:28,827 - INFO - Failed test for judaism
+2024-11-23 18:17:28,956 - INFO - Failed test for subjectivediscourse_response_sentiment
+2024-11-23 18:17:29,107 - INFO - Failed test for interpersonal
+2024-11-23 18:17:29,225 - INFO - Failed test for tweeteval
+2024-11-23 18:17:29,799 - INFO - Failed test for parenting
+2024-11-23 18:17:30,132 - INFO - Failed test for travel
+2024-11-23 18:17:30,240 - INFO - Failed test for subjectivediscourse_response
+2024-11-23 18:17:30,330 - INFO - Failed test for subjectivediscourse_question_sentiment
+2024-11-23 18:17:30,389 - INFO - Failed test for epic
+2024-11-23 18:17:30,473 - INFO - Failed test for studemo
+2024-11-23 18:17:30,557 - INFO - Failed test for philosophy
