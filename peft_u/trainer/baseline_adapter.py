@@ -66,7 +66,7 @@ def parse_args():
 
 
 def get_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> T5TokenizerFast:
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16)
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     tokenizer.model_max_length = 512
     tokenizer.deprecation_warnings['Asking-to-pad-a-fast-tokenizer'] = True  # disables warning
     return tokenizer
@@ -104,7 +104,7 @@ def load_dataset(
             return train_util.BatchCollator(tokenizer)(texts=batch['text'], labels=batch['label'])
         return {uid: u_dset.map(map_single, batched=True, **kwargs) for uid, u_dset in dsets.items()}, user_ids
     else:
-        return dsets, user_ids
+        return dsets, dsets.keys()
 
 
 def get_train_meta(

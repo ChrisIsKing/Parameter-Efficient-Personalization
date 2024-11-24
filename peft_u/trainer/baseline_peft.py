@@ -209,6 +209,7 @@ if __name__ == '__main__':
                     continue
 
                 model = load_model(model_name_or_path=model_name_or_path, peft_method=method, logger_fl=logger_fl)
+                model = model.to(torch.bfloat16)
 
                 trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False, is_generative=is_generative)
                 t_e_ = tm_.end()
