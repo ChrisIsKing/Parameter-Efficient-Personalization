@@ -13,7 +13,6 @@ logging.basicConfig(
 )
 
 parent_dir = 'eval/'
-machine_name = 'clarity2'
 
 train_date_pattern = r"^(\d{2}-\d{2}-\d{2})_"
 model_dict_pattern = r"\{(.*?)\}"
@@ -37,7 +36,7 @@ for i in os.walk(parent_dir):
         model_dict = json.loads(f"{{{foo}}}")
         model_dict['train_date'] = re.search(train_date_pattern, subdir).group(1)
         model_dict['test_date'] = re.search(test_date_pattern, subdir).group(1)
-        model_dict['machine'] = machine_name
+        model_dict['machine'] = 'clarity3'
 
         test_files = [f for f in os.listdir(parent_dir+subdir) if re.match(file_pattern, f)]
         if len(test_files) == 0:
@@ -55,7 +54,7 @@ for i in os.walk(parent_dir):
             with open(file_path, 'r') as file:
                 content = file.read()
                 content = content.split("macro-avg rouge:",1)[1]
-                model_dict['score'] = content[:content.rfind('}')]
+                model_dict['score'] = content[:content.rfind('}')].replace('\n','')
         else:
             model_dict['metric'] = 'accuracy'
             file_path = os.path.join(parent_dir+subdir, test_file_selected)
