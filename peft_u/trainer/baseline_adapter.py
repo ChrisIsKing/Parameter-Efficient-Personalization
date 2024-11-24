@@ -31,6 +31,7 @@ import peft_u.util.models as model_util
 import peft_u.trainer.train as train_util
 from peft_u.preprocess.load_dataset import *
 from peft_u.trainer import HF_MODEL_NAME, get_arg_parser
+from torch.cuda.amp import autocast #TODO fp16
 
 
 logger = get_logger('Adapter Baseline')
@@ -59,11 +60,13 @@ def reduce_hf_logging():
 
 
 def parse_args():
-    return get_arg_parser(default_method=DEFAULT_ADAPTER_METHOD, method_choices=ADAPTER_METHODS).parser.parse_args()
+    out = get_arg_parser(default_method=DEFAULT_ADAPTER_METHOD, method_choices=ADAPTER_METHODS)
+    out.test_parser.add_argument("--use_user_profile", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
+    return out.parser.parse_args()
 
 
 def get_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> T5TokenizerFast:
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16)
     tokenizer.model_max_length = 512
     tokenizer.deprecation_warnings['Asking-to-pad-a-fast-tokenizer'] = True  # disables warning
     return tokenizer
@@ -93,7 +96,7 @@ def load_dataset(
             train=Dataset.from_generator(get_gen(u_data.train), cache_dir=c_dir),
             validation=Dataset.from_generator(get_gen(u_data.val), cache_dir=c_dir),
             test=Dataset.from_generator(get_gen(u_data.test), cache_dir=c_dir)
-        ) for uid, u_data in dsets.items()
+        ) for uid, u_data in dsets.items() if not (len(u_data.train) == 0 or len(u_data.val) == 0 or len(u_data.test) == 0)
     }
 
     if tokenize:
@@ -279,7 +282,8 @@ if __name__ == '__main__':
             leakage = leakage if not is_generative else False # force no leakage for generative
 
             date = now(fmt='short-date')
-            eval_output_path = os_join(u.proj_path, 'eval', f'{model_name_or_path}_Eval-{date}' if not use_user_profile else f'{model_name_or_path}__UserProfile-Eval-{date}')
+            eval_out_str = f'{model_name_or_path}_Eval-{date}' if not use_user_profile else f'{model_name_or_path}_UserProfle-Eval-{date}'
+            eval_output_path = os_join(u.eval_path, eval_out_str)
             os.makedirs(eval_output_path, exist_ok=True)
 
             d_log = dict(
@@ -299,7 +303,7 @@ if __name__ == '__main__':
             n_user = len(it)
 
             label_options = sconfig(f'datasets.{dataset_name}.labels')
-            d_log = dict(users=it, label_options=label_options)
+            d_log = dict(users=it, label_options=label_options, use_user_profile=use_user_profile)
             logger.info(f'Testing w/ {pl.i(d_log)}...')
             logger_fl.info(f'Testing w/ {d_log}...')
 
@@ -327,11 +331,13 @@ if __name__ == '__main__':
                     idxs = [int(idx) for idx in idxs]
                     inputs = {k: torch.tensor(v) for k, v in dset[idxs].items() if k not in ['text', 'label', 'labels']}
                     if torch.cuda.is_available():
-                        inputs = {k: v.cuda() for k, v in inputs.items()}
+                        inputs = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in inputs.items()}
+                        # inputs = {k: v.cuda() for k, v in inputs.items()}
                     labels = dset[idxs]['label']
 
                     with torch.no_grad():
-                        outputs = model.generate(**inputs, max_new_tokens=16)
+                        with autocast(dtype=torch.bfloat16):
+                            outputs = model.generate(**inputs, max_new_tokens=16)
                     lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
                     for idx, lb, dec in zip(idxs, labels, lst_decoded):
