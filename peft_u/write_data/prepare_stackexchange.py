@@ -2,17 +2,23 @@ import os
 from os.path import join as os_join
 import fnmatch
 from collections import defaultdict
-
+from argparse import ArgumentParser
 from peft_u.util import *
 from peft_u.preprocess.convert_data_format import *
+import random
 
-import sys
-
+def parse_args():
+    parser = ArgumentParser()
+    parser.add_argument('--substack', type=str)
+    parser.add_argument('--output_dir', '-o', default=None, type=str, help='Path to output directory')
+    parser.add_argument('--num_samples', default=None, type=int)
+    return parser.parse_args()
 
 if __name__ == '__main__':
     from stefutil import *
 
-    substack = sys.argv[1]
+    args = parse_args()
+    substack = args.substack
 
     dset_base_path = os_join(u.proj_path, u.dset_dir, substack)#f'{substack}.stackexchange.com')
 
@@ -31,5 +37,9 @@ if __name__ == '__main__':
         user_data[user_id][question_id] = dict(question=f"{title} {tags} {question}", answer=[answer])
     # from itertools import islice
     # user_data = dict(islice(user_data.items(), 5))
+    if args.num_samples is not None:
+        keys = random.sample(list(user_data.keys()), args.num_samples)
+        user_data = {k: user_data[k] for k in keys}
+
     save_datasets(data=user_data, base_path=dset_base_path, is_generative=True, label_key='answer')
     # mic(data2label_meta(data=user_data))

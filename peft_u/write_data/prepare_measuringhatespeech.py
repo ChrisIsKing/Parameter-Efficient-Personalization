@@ -6,10 +6,12 @@ import datasets
 from tqdm import trange
 from peft_u.util import *
 from peft_u.preprocess.convert_data_format import *
+import random
 
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument('--output_dir', '-o', default=None, type=str, help='Path to output directory')
+    parser.add_argument('--num_samples', default=None, type=int)
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -29,6 +31,10 @@ if __name__ == '__main__':
         post_id, user_id = str(df['comment_id'][i]), str(df['annotator_id'][i])
         text, label = df['text'][i], str(int(df['hatespeech'][i]))
         user_data[user_id][post_id] = dict(text=text, label=[label])
+
+    if args.num_samples is not None:
+        keys = random.sample(list(user_data.keys()), args.num_samples)
+        user_data = {k: user_data[k] for k in keys}
 
     dset_base_path = os_join(u.proj_path, u.dset_dir, 'measuringhatespeech')
     os.makedirs(dset_base_path, exist_ok=True)
