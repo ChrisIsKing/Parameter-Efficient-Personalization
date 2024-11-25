@@ -10,6 +10,7 @@ def parse_args():
     parser = ArgumentParser()
     parser.add_argument('--output_dir', '-o', default=None, type=str, help='Path to output directory')
     parser.add_argument('--num_samples', default=None, type=int)
+    parser.add_argument('--seed', default=42, type=int)
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -34,6 +35,7 @@ if __name__ == '__main__':
                 user_data[user_id][post_id] = dict(text=text, label=[label_map[label]])
 
         if args.num_samples is not None:
+            random.seed(args.seed)
             keys = random.sample(list(user_data.keys()), args.num_samples)
             user_data = {k: user_data[k] for k in keys}
 
