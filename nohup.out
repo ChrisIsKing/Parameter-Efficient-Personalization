@@ -1,0 +1,275 @@
+WARNING: Skipping adapter-transformers as it is not installed.
+WARNING: Skipping transformers as it is not installed.
+Collecting absl-py==1.4.0
+  Using cached absl_py-1.4.0-py3-none-any.whl (126 kB)
+Collecting accelerate==0.19.0
+  Using cached accelerate-0.19.0-py3-none-any.whl (219 kB)
+Collecting aiohttp==3.8.4
+  Using cached aiohttp-3.8.4-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.0 MB)
+Collecting aiosignal==1.3.1
+  Using cached aiosignal-1.3.1-py3-none-any.whl (7.6 kB)
+Collecting appnope==0.1.3
+  Using cached appnope-0.1.3-py2.py3-none-any.whl (4.4 kB)
+Collecting asttokens==2.2.1
+  Using cached asttokens-2.2.1-py2.py3-none-any.whl (26 kB)
+Collecting async-timeout==4.0.2
+  Using cached async_timeout-4.0.2-py3-none-any.whl (5.8 kB)
+Collecting attrs==22.2.0
+  Using cached attrs-22.2.0-py3-none-any.whl (60 kB)
+Collecting backcall==0.2.0
+  Using cached backcall-0.2.0-py2.py3-none-any.whl (11 kB)
+Collecting cachetools==5.3.0
+  Using cached cachetools-5.3.0-py3-none-any.whl (9.3 kB)
+Collecting certifi==2022.12.7
+  Using cached certifi-2022.12.7-py3-none-any.whl (155 kB)
+Collecting charset-normalizer==3.1.0
+  Using cached charset_normalizer-3.1.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (195 kB)
+Collecting click==8.1.3
+  Using cached click-8.1.3-py3-none-any.whl (96 kB)
+Collecting cmake==3.26.3
+  Using cached cmake-3.26.3-py2.py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (24.0 MB)
+Collecting colorama==0.4.6
+  Using cached colorama-0.4.6-py2.py3-none-any.whl (25 kB)
+Collecting comm==0.1.2
+  Using cached comm-0.1.2-py3-none-any.whl (6.5 kB)
+Collecting contourpy==1.0.7
+  Using cached contourpy-1.0.7-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (300 kB)
+Requirement already satisfied: cycler==0.11.0 in /usr/local/lib/python3.8/dist-packages/cycler-0.11.0-py3.8.egg (from -r requirements_peft.txt (line 18)) (0.11.0)
+Collecting datasets==2.10.1
+  Using cached datasets-2.10.1-py3-none-any.whl (469 kB)
+Collecting debugpy==1.6.6
+  Using cached debugpy-1.6.6-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.1 MB)
+Collecting decorator==5.1.1
+  Using cached decorator-5.1.1-py3-none-any.whl (9.1 kB)
+Collecting dill==0.3.6
+  Using cached dill-0.3.6-py3-none-any.whl (110 kB)
+Collecting executing==1.2.0
+  Using cached executing-1.2.0-py2.py3-none-any.whl (24 kB)
+Collecting filelock==3.10.0
+  Using cached filelock-3.10.0-py3-none-any.whl (9.9 kB)
+Collecting fonttools==4.39.4
+  Using cached fonttools-4.39.4-py3-none-any.whl (1.0 MB)
+Collecting frozenlist==1.3.3
+  Using cached frozenlist-1.3.3-cp38-cp38-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (161 kB)
+Collecting fsspec==2023.3.0
+  Using cached fsspec-2023.3.0-py3-none-any.whl (145 kB)
+Collecting google-auth==2.18.1
+  Using cached google_auth-2.18.1-py2.py3-none-any.whl (178 kB)
+Collecting google-auth-oauthlib==1.0.0
+  Using cached google_auth_oauthlib-1.0.0-py2.py3-none-any.whl (18 kB)
+Collecting grpcio==1.54.2
+  Using cached grpcio-1.54.2-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (5.1 MB)
+Collecting huggingface-hub==0.14.1
+  Using cached huggingface_hub-0.14.1-py3-none-any.whl (224 kB)
+Collecting icecream==2.1.3
+  Using cached icecream-2.1.3-py2.py3-none-any.whl (8.4 kB)
+Collecting idna==3.4
+  Using cached idna-3.4-py3-none-any.whl (61 kB)
+Collecting pip-install==1.3.5
+  Using cached pip_install-1.3.5-py3-none-any.whl (3.2 kB)
+Collecting ipykernel==6.21.2
+  Using cached ipykernel-6.21.2-py3-none-any.whl (149 kB)
+Collecting ipython==8.10.0
+  Using cached ipython-8.10.0-py3-none-any.whl (784 kB)
+Collecting jedi==0.18.2
+  Using cached jedi-0.18.2-py2.py3-none-any.whl (1.6 MB)
+Collecting Jinja2==3.1.2
+  Using cached Jinja2-3.1.2-py3-none-any.whl (133 kB)
+Collecting joblib==1.2.0
+  Using cached joblib-1.2.0-py3-none-any.whl (297 kB)
+Collecting jupyter_client==8.0.3
+  Using cached jupyter_client-8.0.3-py3-none-any.whl (102 kB)
+Collecting jupyter_core==5.2.0
+  Using cached jupyter_core-5.2.0-py3-none-any.whl (94 kB)
+Collecting kiwisolver==1.4.4
+  Using cached kiwisolver-1.4.4-cp38-cp38-manylinux_2_5_x86_64.manylinux1_x86_64.whl (1.2 MB)
+Collecting krippendorff==0.5.2
+  Using cached krippendorff-0.5.2-py3-none-any.whl (17 kB)
+Collecting lit==16.0.3
+  Using cached lit-16.0.3.tar.gz (138 kB)
+    ERROR: Command errored out with exit status 1:
+     command: /usr/bin/python3 -c 'import sys, setuptools, tokenize; sys.argv[0] = '"'"'/tmp/pip-install-u2boayvb/lit/setup.py'"'"'; __file__='"'"'/tmp/pip-install-u2boayvb/lit/setup.py'"'"';f=getattr(tokenize, '"'"'open'"'"', open)(__file__);code=f.read().replace('"'"'\r\n'"'"', '"'"'\n'"'"');f.close();exec(compile(code, __file__, '"'"'exec'"'"'))' egg_info --egg-base /tmp/pip-install-u2boayvb/lit/pip-egg-info
+         cwd: /tmp/pip-install-u2boayvb/lit/
+    Complete output (21 lines):
+    Traceback (most recent call last):
+      File "<string>", line 1, in <module>
+      File "/tmp/pip-install-u2boayvb/lit/setup.py", line 18, in <module>
+        setup(
+      File "/usr/lib/python3/dist-packages/setuptools/__init__.py", line 143, in setup
+        _install_setup_requires(attrs)
+      File "/usr/lib/python3/dist-packages/setuptools/__init__.py", line 131, in _install_setup_requires
+        dist = distutils.core.Distribution(dict(
+      File "/usr/lib/python3/dist-packages/setuptools/dist.py", line 447, in __init__
+        _Distribution.__init__(self, {
+      File "/usr/lib/python3.8/distutils/dist.py", line 292, in __init__
+        self.finalize_options()
+      File "/usr/lib/python3/dist-packages/setuptools/dist.py", line 740, in finalize_options
+        ep.load()(self)
+      File "/usr/lib/python3/dist-packages/pkg_resources/__init__.py", line 2444, in load
+        self.require(*args, **kwargs)
+      File "/usr/lib/python3/dist-packages/pkg_resources/__init__.py", line 2467, in require
+        items = working_set.resolve(reqs, env, installer, extras=self.extras)
+      File "/usr/lib/python3/dist-packages/pkg_resources/__init__.py", line 787, in resolve
+        raise DistributionNotFound(req, requirers)
+    pkg_resources.DistributionNotFound: The 'pyparsing<3,>=2.0.2' distribution was not found and is required by packaging
+    ----------------------------------------
+ERROR: Command errored out with exit status 1: python setup.py egg_info Check the logs for full command output.
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_goemotion.py", line 5, in <module>
+    from tqdm import tqdm
+ModuleNotFoundError: No module named 'tqdm'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_hatexplain.py", line 5, in <module>
+    from peft_u.util import *
+ModuleNotFoundError: No module named 'peft_u'
+python3: can't open file 'peft_u/write_data/prepare_subjectivediscourse_question_sentiment.py': [Errno 2] No such file or directory
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_stackexchange.py", line 6, in <module>
+    from peft_u.util import *
+ModuleNotFoundError: No module named 'peft_u'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_studemo.py", line 4, in <module>
+    from tqdm import tqdm
+ModuleNotFoundError: No module named 'tqdm'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_stackexchange.py", line 6, in <module>
+    from peft_u.util import *
+ModuleNotFoundError: No module named 'peft_u'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_stackexchange.py", line 6, in <module>
+    from peft_u.util import *
+ModuleNotFoundError: No module named 'peft_u'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_wikidetox.py", line 4, in <module>
+    from tqdm import tqdm
+ModuleNotFoundError: No module named 'tqdm'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_unhealthyconversations.py", line 4, in <module>
+    from tqdm import tqdm
+ModuleNotFoundError: No module named 'tqdm'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_goodreads.py", line 6, in <module>
+    from peft_u.util import *
+ModuleNotFoundError: No module named 'peft_u'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_subjectivediscourse.py", line 6, in <module>
+    from tqdm import tqdm
+ModuleNotFoundError: No module named 'tqdm'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_tweeteval.py", line 4, in <module>
+    from stefutil import *
+ModuleNotFoundError: No module named 'stefutil'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_epic.py", line 4, in <module>
+    import pandas as pd
+ModuleNotFoundError: No module named 'pandas'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_cockamamie.py", line 5, in <module>
+    from peft_u.util import *
+ModuleNotFoundError: No module named 'peft_u'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_stackexchange.py", line 6, in <module>
+    from peft_u.util import *
+ModuleNotFoundError: No module named 'peft_u'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_stackexchange.py", line 6, in <module>
+    from peft_u.util import *
+ModuleNotFoundError: No module named 'peft_u'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_stackexchange.py", line 6, in <module>
+    from peft_u.util import *
+ModuleNotFoundError: No module named 'peft_u'
+python3: can't open file 'peft_u/write_data/prepare_subjectivediscourse_response.py': [Errno 2] No such file or directory
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_stackexchange.py", line 6, in <module>
+    from peft_u.util import *
+ModuleNotFoundError: No module named 'peft_u'
+Traceback (most recent call last):
+  File "peft_u/write_data/prepare_gabhate.py", line 4, in <module>
+    from peft_u.util import *
+ModuleNotFoundError: No module named 'peft_u'
+python3: can't open file 'peft_u/write_data/prepare_subjectivediscourse_response_sentiment.py': [Errno 2] No such file or directory
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "peft_u/trainer/baseline_peft.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'

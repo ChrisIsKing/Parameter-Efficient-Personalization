@@ -123,7 +123,7 @@ def load_dataset_with_prompts(
     is_generative = sconfig(f'datasets.{dataset_name}.is_generative')
     text_col = 'text' if not is_generative else ('question' if dataset_name != 'goodreads' else 'book_description')
     label_col = 'label' if not is_generative else ('answer' if dataset_name != 'goodreads' else 'review')
-    instruction = sconfig(f'datasets.{dataset_name}.instruction') if not is_generative else None
+    instruction = sconfig(f'datasets.{dataset_name}.instruction')
     dset = _load_dataset(dataset_name=dataset_name, leakage=leakage)
     user_profiles = _load_user_profiles(dataset_name=dataset_name) if use_user_profile else None
 

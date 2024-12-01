@@ -194,48 +194,56 @@
             "domain": [
                 "generative book review response"
             ],
+            "instruction": "Write a book review given the book title and description",
             "is_generative": true
         },
         "interpersonal": {
             "domain": [
                 "generative question-answer response"
             ],
+            "instruction": "Answer the question",
             "is_generative": true
         },
         "judaism": {
             "domain": [
                 "generative question-answer response"
             ],
+            "instruction": "Answer the question",
             "is_generative": true
         },
         "parenting": {
             "domain": [
                 "generative question-answer response"
             ],
+            "instruction": "Answer the question",
             "is_generative": true
         },
         "philosophy": {
             "domain": [
                 "generative question-answer response"
             ],
+            "instruction": "Answer the question",
             "is_generative": true
         },
         "travel": {
             "domain": [
                 "generative question-answer response"
             ],
+            "instruction": "Answer the question",
             "is_generative": true
         },
         "workplace": {
             "domain": [
                 "generative question-answer response"
             ],
+            "instruction": "Answer the question",
             "is_generative": true
         },
         "worldbuilding": {
             "domain": [
                 "generative question-answer response"
             ],
+            "instruction": "Answer the question",
             "is_generative": true
         }
     }

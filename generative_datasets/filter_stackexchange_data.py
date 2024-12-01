@@ -1,4 +1,4 @@
-import pandas as pd
+creimport pandas as pd
 
 min_num_user_answers = 20
 min_num_post_answers = 5

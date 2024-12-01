@@ -1,0 +1,52 @@
+2024-11-24 08:54:28,890 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=, ds=gabhate}
+2024-11-24 08:54:28,891 - INFO - Failed test for test_dir
+2024-11-24 10:25:19,906 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=, ds=gabhate}
+2024-11-24 11:39:39,337 - INFO - Failed test for test_dir
+2024-11-24 14:58:46,773 - INFO - Failed test for 24-11-04_{peft=prefix, md_nm=flan-t5-base-it, ds=gabhate}
+2024-11-24 15:22:25,973 - INFO - Failed test for 24-11-04_{peft=prefix, md_nm=t5-micro, ds=gabhate}
+2024-11-24 15:22:57,966 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=byt5-small, ds=gabhate}
+2024-11-24 15:27:25,087 - INFO - Failed test for 23-06-09_{md_nm=flan-t5-base, ds=cockamamie, peft=prefix}
+2024-11-24 15:39:12,634 - INFO - Failed test for 24-11-02_{peft=prefix, md_nm=flan-t5-base, ds=gabhate}
+2024-11-24 15:57:48,538 - INFO - Failed test for 24-11-03_{peft=p_tuning, md_nm=flan-t5-small, ds=gabhate}
+2024-11-24 15:59:20,946 - INFO - Failed test for 23-06-28_{peft=prompt_tuning, md_nm=flan-t5-base, ds=hatexplain}_1transf
+2024-11-24 15:59:58,240 - INFO - Failed test for 24-11-03_{peft=lora, md_nm=flan-t5-base, ds=gabhate}
+2024-11-24 16:04:31,864 - INFO - Failed test for 24-11-03_{adapter=IA3, md_nm=flan-t5-base, ds=tweeteval}_16ep
+2024-11-24 16:11:10,143 - INFO - Failed test for 23-06-28_{peft=p_tuning, md_nm=flan-t5-base, ds=measuringhatespeech}_lstm_1transf
+2024-11-24 16:29:59,583 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=flan-t5-base, ds=epic}
+2024-11-24 16:31:32,744 - INFO - Failed test for 23-06-22_{peft=p_tuning, md_nm=flan-t5-base, ds=cockamamie}
+2024-11-24 16:39:19,241 - INFO - Failed test for 24-11-04_{peft=prefix, md_nm=pegasus-x-small, ds=gabhate}
+2024-11-24 16:39:19,241 - INFO - Failed test for 24-11-03_{peft=lora, md_nm=byt5-small, ds=gabhate}
+2024-11-24 16:39:21,896 - INFO - Failed test for 24-11-04_{peft=prefix, md_nm=flan-t5-base, ds=gabhate}
+2024-11-24 17:00:34,923 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=flan-t5-base, ds=gabhate}
+2024-11-24 17:00:34,923 - INFO - Failed test for 24-11-03_{adapter=IA3, md_nm=flan-t5-base, ds=gabhate}_16ep
+2024-11-24 17:00:34,923 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=, ds=gabhate}
+2024-11-24 17:07:20,093 - INFO - Failed test for 24-11-03_{adapter=IA3, md_nm=flan-t5-base, ds=gabhate}_1ep
+2024-11-24 17:39:27,509 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=llama, ds=gabhate}
+2024-11-24 17:41:41,335 - INFO - Failed test for 24-11-04_{peft=prefix, md_nm=t5-mini, ds=gabhate}
+2024-11-24 17:59:55,965 - INFO - Failed test for 24-11-04_{peft=prefix, md_nm=flan-t5-small, ds=gabhate}
+2024-11-24 18:29:06,077 - INFO - Failed test for test_dir
+2024-11-24 18:29:06,077 - INFO - Failed test for 24-11-03_{peft=p_tuning, md_nm=byt5-small, ds=gabhate}
+2024-11-24 18:29:20,352 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=flan-t5-large, ds=gabhate}
+2024-11-24 18:32:41,109 - INFO - Failed test for 24-11-05_{peft=prefix, md_nm=flan-t5-base, ds=gabhate}
+2024-11-24 18:32:45,737 - INFO - Failed test for 24-11-03_{peft=lora, md_nm=flan-t5-small, ds=gabhate}
+2024-11-24 18:35:49,604 - INFO - Failed test for 24-11-03_{peft=p_tuning, md_nm=flan-t5-base, ds=gabhate}
+2024-11-24 18:35:49,605 - INFO - Failed test for 24-11-03_{peft=prompt_tuning, md_nm=flan-t5-base, ds=gabhate}
+2024-11-24 20:40:51,889 - INFO - Failed test for 24-11-04_{adapter=IA3, md_nm=flan-t5-small, ds=gabhate}_1ep
+2024-11-24 20:41:08,381 - INFO - Failed test for 24-11-03_{peft=prompt_tuning, md_nm=byt5-small, ds=gabhate}
+2024-11-24 21:42:12,591 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=flan-t5-small, ds=gabhate}
+2024-11-24 21:42:55,283 - INFO - Failed test for 24-11-04_{peft=prefix, md_nm=MiniLM-L12-H384-uncased, ds=gabhate}
+2024-11-24 21:58:51,674 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=gpt-4o-mini, ds=gabhate}
+2024-11-24 21:58:51,675 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=Llama-3.2-1B, ds=gabhate}
+2024-11-24 21:59:06,968 - INFO - Failed test for 24-11-09_{peft=prefix, md_nm=flan-t5-base, ds=gabhate}
+2024-11-24 22:02:30,582 - INFO - Failed test for 24-11-04_{peft=prefix, md_nm=t5-small, ds=gabhate}
+2024-11-24 23:02:25,251 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=google-flan-t5-base-alpaca, ds=gabhate}
+2024-11-24 23:22:41,603 - INFO - Failed test for 23-06-30_{peft=prompt_tuning, md_nm=flan-t5-base, ds=wikidetox}_1transf
+2024-11-25 00:14:04,660 - INFO - Failed test for 23-08-05_{PH=None, md_nm=flan-t5-base, ds=unhealthyconversations}
+2024-11-27 08:42:41,259 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=, ds=gabhate}
+2024-11-27 08:42:41,259 - INFO - Failed test for test_dir
+2024-11-27 08:43:14,664 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=, ds=gabhate}
+2024-11-27 08:43:14,664 - INFO - Failed test for test_dir
+2024-11-27 09:06:15,971 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=, ds=gabhate}
+2024-11-27 09:12:51,046 - INFO - Failed test for test_dir
+2024-11-27 21:33:56,376 - INFO - Failed test for 24-11-03_{peft=prefix, md_nm=, ds=gabhate}
+2024-11-27 21:33:56,394 - INFO - Failed test for test_dir

@@ -153,41 +153,49 @@ config_dict = dict(
         ),
         goodreads=dict(
             domain=['generative book review response'],
+            instruction="Write a book review given the book title and description",
             is_generative=True
         )
         ,
         interpersonal=dict(
             domain=['generative question-answer response'],
+            instruction="Answer the question",
             is_generative=True
         )
         ,
         judaism=dict(
             domain=['generative question-answer response'],
+            instruction="Answer the question",
             is_generative=True
         )
         ,
         parenting=dict(
             domain=['generative question-answer response'],
+            instruction="Answer the question",
             is_generative=True
         )
         ,
         philosophy=dict(
             domain=['generative question-answer response'],
+            instruction="Answer the question",
             is_generative=True
         )
         ,
         travel=dict(
             domain=['generative question-answer response'],
+            instruction="Answer the question",
             is_generative=True
         )
         ,
         workplace=dict(
             domain=['generative question-answer response'],
+            instruction="Answer the question",
             is_generative=True
         )
         ,
         worldbuilding=dict(
             domain=['generative question-answer response'],
+            instruction="Answer the question",
             is_generative=True
         )
     )

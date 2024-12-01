@@ -10,7 +10,11 @@ from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
-    PreTrainedTokenizer
+    PreTrainedTokenizer,
+    AutoModelForCausalLM,
+    LlamaForSequenceClassification,
+    LlamaForCausalLM,
+    LlamaConfig
 )
 from peft import get_peft_model, PeftConfig, PeftModel, PeftModelForSeq2SeqLM
 from peft import TaskType, LoraConfig,  PrefixTuningConfig, PromptEncoderConfig, PromptTuningConfig
@@ -41,12 +45,20 @@ def parse_args():
 
 def load_model(
         model_name_or_path: str = HF_MODEL_NAME, peft_method: str = DEFAULT_PEFT_METHOD,
-        verbose: bool = False, logger_fl: Logger = None
+        verbose: bool = False, logger_fl: Logger = None, is_generative: bool = False
 ) -> PeftModelForSeq2SeqLM:
     log = model_util.LoadModelLogging(logger=logger, logger_fl=logger_fl, verbose=verbose)
     cache_dir = log.get_n_log_cache_dir(model_name_or_path=model_name_or_path)
 
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
+    if 'llama' in model_name_or_path.lower():
+        config = LlamaConfig.from_pretrained(model_name_or_path)
+        if not is_generative:
+            config.num_labels = 2
+            model = LlamaForSequenceClassification.from_pretrained(model_name_or_path, config=config, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
+        else:
+            model = LlamaForCausalLM.from_pretrained(model_name_or_path, config=config, cache_dir=cache_dir, torch_dtype=torch.bfloat16)
+    else:
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
 
     if peft_method is not None:
         ca.check_mismatch('PEFT method', peft_method, PEFT_METHODS)
@@ -55,7 +67,7 @@ def load_model(
         if logger_fl:
             logger_fl.info('Loading Peft model...')
 
-        config_d: Dict[str, Any] = dict(task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False)
+        config_d: Dict[str, Any] = dict(task_type=(TaskType.CAUSAL_LM if 'llama' in model_name_or_path.lower() else TaskType.SEQ_2_SEQ_LM), inference_mode=False)
         _same_param_exp = False
         if peft_method == 'lora':
             peft_config = LoraConfig(**config_d, r=1 if _same_param_exp else 8, lora_alpha=32, lora_dropout=0.1)
@@ -107,9 +119,16 @@ def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple
         logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
 
     config = PeftConfig.from_pretrained(model_name_or_path)
-    model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
-    model = PeftModel.from_pretrained(model, model_name_or_path)
-    tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
+
+    if 'llama' in model_name_or_path.lower():
+        model = LlamaForSequenceClassification.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
+        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
+        # model.resize_token_embeddings(len(tokenizer))
+        tokenizer.padding_side = "left"
+    else:
+        model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
+        model = PeftModel.from_pretrained(model, model_name_or_path)
+        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
 
     if torch.cuda.is_available():
         model = model.cuda()
@@ -187,8 +206,9 @@ if __name__ == '__main__':
             if global_tqdm:
                 it = tqdm(it, desc=f'Training on {pl.i(dataset_name)}')
 
+            tokenizer = train_util.load_tokenizer()
             trainer = train_util.MyTrainer(
-                tokenizer=train_util.load_tokenizer(),
+                tokenizer=tokenizer,
                 seed=seed, batch_size=args.batch_size, num_epochs=args.num_epochs,
                 learning_rate=args.learning_rate, weight_decay=args.weight_decay,
                 output_path=output_path, saver_cls=TrainSaver
@@ -209,6 +229,8 @@ if __name__ == '__main__':
                     continue
 
                 model = load_model(model_name_or_path=model_name_or_path, peft_method=method, logger_fl=logger_fl)
+                model = model.to(torch.bfloat16)
+                model.config.pad_token_id = tokenizer.pad_token_id
 
                 trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False, is_generative=is_generative)
                 t_e_ = tm_.end()
@@ -249,14 +271,19 @@ if __name__ == '__main__':
 
             tm = Timer()
             model = None
-            tokenizer = train_util.load_tokenizer()
+            tokenizer = train_util.load_tokenizer(model_name_or_path)
             if zeroshot:  # Load global model for all users
                 load_args = dict(peft_method=None, verbose=True, logger_fl=logger_fl)
-                model = load_model(model_name_or_path=model_name_or_path, **load_args)
+                model = load_model(model_name_or_path=model_name_or_path, is_generative=is_generative, **load_args)
+                model.config.pad_token_id = tokenizer.pad_token_id
                 model.eval()
             else:
                 model_name_or_path = model_util.prepend_local_model_path(model_path=model_name_or_path)
-
+            if type(model).__name__ in ('LlamaForSequenceClassification','LlamaForCausalLM'):
+                tokenizer.pad_token_id = tokenizer.eos_token_id
+                tokenizer.padding_side = "left"
+                model.resize_token_embeddings(len(tokenizer))
+                # model.generation_config.pad_token_id = tokenizer.pad_token_id
             # strt = 29044976  # unhealthyconversations
             strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile)
@@ -274,10 +301,12 @@ if __name__ == '__main__':
             )
             for i, uid in enumerate(it, start=1):
                 torch.cuda.empty_cache()
+                # a = InputExample(guid='0', instruction='Label text as Hateful or Non-hateful', text='I hate you!', prompt_examples="", label=["Hateful"], user_profile=None)
+                # ts = ListDataset([a])#dset[uid].test)
                 ts = ListDataset(dset[uid].test)
 
                 path = os_join(model_name_or_path, uid2u_str(uid), 'trained')
-                if len(ts) == 0 or not os.path.exists(path):
+                if len(ts) == 0 or (not zeroshot and not os.path.exists(path)):
                     logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
                     continue
                     

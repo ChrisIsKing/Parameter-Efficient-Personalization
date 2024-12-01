@@ -132,7 +132,8 @@ def get_train_meta(
         report_to='none',
         load_best_model_at_end=True,
         metric_for_best_model='eval_loss',
-        greater_is_better=False
+        greater_is_better=False,
+        save_total_limit=1
     )
     if verbose:
         logger.info(f'Training args: {pl.fmt(train_args)}')

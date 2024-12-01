@@ -33,7 +33,7 @@ else:
     import warnings
     from copy import deepcopy
 
-    from peft import PromptLearningConfig, PeftModel, PeftModelForSeq2SeqLM
+    from peft import PromptLearningConfig, PeftModel, PeftModelForSeq2SeqLM, PeftModelForCausalLM
     from peft import PeftType, TaskType, MODEL_TYPE_TO_PEFT_MODEL_MAPPING
 
 
@@ -98,6 +98,8 @@ def get_arg_parser(default_method: str = None, method_choices: List[str] = None,
 
 def load_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> PreTrainedTokenizer:
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    tokenizer.truncation = True
+    tokenizer.padding = True
     tokenizer.model_max_length = 512
     return tokenizer
 
@@ -146,6 +148,8 @@ class MyTrainer:
             self, model: torch.nn.Module, dataset: InputEgDataset,
             user_id: str = None, verbose: bool = False, save_per_epoch: bool = True, is_generative: bool = False
     ):
+        model.resize_token_embeddings(len(self.tokenizer))
+
         output_path = os_join(self.output_path, uid2u_str(user_id))
         saver = self.saver_cls(model=model, output_base_path=output_path)
 
@@ -191,7 +195,7 @@ class MyTrainer:
             for step, batch in it:
                 if torch.cuda.is_available():
                     batch = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in batch.items()}
-                with autocast(dtype=torch.bfloat16):
+                with autocast(dtype=torch.bfloat16): 
                     outputs = model(**batch)
 
                 logits = outputs.logits
@@ -199,7 +203,8 @@ class MyTrainer:
                 if is_generative:
                     loss = torch.nn.CrossEntropyLoss()(logits, torch.flatten(batch['labels']))
                 else:
-                    loss = outputs.loss
+                    loss = torch.nn.CrossEntropyLoss()(logits.mean(dim=1), torch.flatten(batch['labels']))
+                    # loss = outputs.loss
 
                 loss_item = loss.detach().item()
                 total_tr_loss += loss_item
@@ -226,8 +231,8 @@ class MyTrainer:
                 if torch.cuda.is_available():
                     batch = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in batch.items()}
                 with torch.no_grad():
-                    with autocast(dtype=torch.bfloat16):
-                        outputs = model(**batch)
+                    # with autocast(dtype=torch.bfloat16):
+                    outputs = model(**batch)
                 cum_eval_loss += outputs.loss.detach().item()
 
                 decoded = self.tokenizer.batch_decode(
@@ -431,8 +436,7 @@ else:
 
     # so that `get_peft_model` uses the subclassed model
     MODEL_TYPE_TO_PEFT_MODEL_MAPPING[TaskType.SEQ_2_SEQ_LM] = MyPeftModelForSeq2SeqLM
-
-
+    
 def setup_train_output_path_n_loggers(args: Namespace, approach: str = None) -> Tuple[str, Logger]:
     model_name_or_path, method = args.model, getattr(args, 'method', None)
     dataset_name, leakage = args.dataset_name, args.leakage
@@ -592,13 +596,31 @@ class MyTester:
 
         for i_ba, inputs in enumerate(it):
             inputs = {k: v for k, v in inputs.items()}
-            inputs.pop('labels')
             if torch.cuda.is_available():
                 inputs = {k: v.cuda() for k, v in inputs.items()}
             with torch.no_grad():
-                outputs = model.generate(**inputs, max_new_tokens=128)  # Greedy decoding
-            lst_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-
+                if type(model).__name__ == 'LlamaForSequenceClassification':
+                    outputs = model(inputs['input_ids'])#, max_new_tokens=128)  # Greedy decoding
+                    logits = outputs.logits  # Shape: (batch_size, num_labels)
+                    predicted_labels = logits.argmax(dim=-1)
+                    lst_decoded = [label_options[label.item()] for label in predicted_labels]
+                elif type(model).__name__ == 'LlamaForCausalLM':
+                    self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+                    outputs = model.generate(inputs['input_ids'],
+                                                max_new_tokens=512,
+                                                pad_token_id=self.tokenizer.pad_token_id,
+                                                eos_token_id=self.tokenizer.eos_token_id,
+                                                attention_mask=inputs['attention_mask'],
+                                                no_repeat_ngram_size=3,
+                                                # temperature=0.7,  # Lower temperature for less randomness
+                                                top_k=50,         # Limit to top 50 tokens by probability
+                                                top_p=0.9,        # Nucleus sampling, focus on top 90% cumulative probability
+                                                repetition_penalty=1.2)  # Penalize repeated tokens)
+                    outputs = outputs[:, inputs["input_ids"].shape[1]:]
+                    lst_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+                else:
+                    outputs = model(inputs)
+                    lst_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
             if not is_generative:
                 for i, decoded in enumerate(lst_decoded):
                     i_sample = i_ba * self.batch_size + i
@@ -610,14 +632,20 @@ class MyTester:
                         df_out_path=os_join(self.eval_output_path, f'{uid2u_str(user_id)}.csv')
                     )
             else:
+                rouges = ['rouge1','rouge2','rougeL']
+                metrics = ['precision','recall','fmeasure']
                 for i, decoded in enumerate(lst_decoded):
                     i_sample = i_ba * self.batch_size + i
-                    if not is_generative:
-                        out = get_pred(decoded=decoded, labels=dataset[i_sample].process_target(), user_id=user_id)
-                        preds[i_sample], trues[i_sample] = out.pred, out.true
-                    else:
-                        ret = scorer.score(dataset[i_sample].label[0], decoded)
-
+                    print('actual==\n',dataset[i_sample].label[0])
+                    print('generated==\n',decoded)
+                    rouge_scores = scorer.score(dataset[i_sample].label[0], decoded)
+                    rouge_dict = {rouge:{metric:[] for metric in metrics} for rouge in rouges}
+                    for rouge_idx, rouge in enumerate(rouges):
+                        for metric_idx, metric in enumerate(metrics):
+                            rouge_dict[rouge][metrics[metric_idx]].append(list(rouge_scores.values())[rouge_idx][metric_idx])
+                            if i+1 == len(lst_decoded): # last iter
+                                rouge_dict[rouge][metrics[metric_idx]] = np.mean(rouge_dict[rouge][metrics[metric_idx]])
+                ret = rouge_dict
         return ret
 
 
@@ -634,23 +662,20 @@ def log_n_save_test_results(
             json.dump(d_accs, f, indent=4)
     else:
         if len(d_accs.values()) > 0:
-            rouges = list(d_accs.values())[0].keys()
+            rouges = ['rouge1','rouge2','rougeL']
             metrics = ['precision','recall','fmeasure']
             rouge_avg = {}
             for rouge in rouges:
                 rouge_avg[rouge] = {}
-                for metric_idx in range(len(metrics)):
-                    rouge_avg[rouge][metrics[metric_idx]] = f'{np.mean([score[rouge][metric_idx] for score in list(d_accs.values())]) * 100:.1f}'
+                for metric in metrics:
+                    rouge_avg[rouge][metric] = f'{np.mean([score[rouge][metric] for score in list(d_accs.values())]) * 100:.1f}'
         else:
             rouge_avg = None
         logger.info(f'Dataset {pl.i(dataset_name)} macro-avg rouge:\n{pl.i(rouge_avg)}')
         logger_fl.info(f'Dataset {dataset_name} macro-avg rouge:\n{rouge_avg}')
 
         d_with_rouge_keys = {
-            uid: {
-                rouge: {v: score[i] for i,v in enumerate(metrics)}
-                for rouge, score in rouges.items()
-            }
+            uid: rouges
             for uid, rouges in d_accs.items()
         }
         with open(os_join(eval_output_path, 'rouge.json'), 'w') as f:
