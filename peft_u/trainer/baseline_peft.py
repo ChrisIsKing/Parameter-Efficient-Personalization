@@ -155,7 +155,7 @@ def _get_dataset_and_users_it(
 ) -> Tuple[Dict[str, InputEgDataset], List[str]]:
     # from peft_u._dset_uid_too_small import uid_too_small
 
-    dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile)
+    dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile, max_example_count=3)
 
     filt = None
     # if dataset_name in uid_too_small:

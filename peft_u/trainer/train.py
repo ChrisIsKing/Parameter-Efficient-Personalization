@@ -100,7 +100,10 @@ def load_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> PreTrainedTokeniz
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     tokenizer.truncation = True
     tokenizer.padding = True
-    tokenizer.model_max_length = 512
+    if 'llama' in model_name_or_path.lower():
+        tokenizer.model_max_length = 4096
+    else:
+        tokenizer.model_max_length = 512
     return tokenizer
 
 
@@ -607,7 +610,7 @@ class MyTester:
                 elif type(model).__name__ == 'LlamaForCausalLM':
                     self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
                     outputs = model.generate(inputs['input_ids'],
-                                                max_new_tokens=512,
+                                                max_new_tokens=256,
                                                 pad_token_id=self.tokenizer.pad_token_id,
                                                 eos_token_id=self.tokenizer.eos_token_id,
                                                 attention_mask=inputs['attention_mask'],
@@ -616,7 +619,9 @@ class MyTester:
                                                 top_k=50,         # Limit to top 50 tokens by probability
                                                 top_p=0.9,        # Nucleus sampling, focus on top 90% cumulative probability
                                                 repetition_penalty=1.2)  # Penalize repeated tokens)
+                    inputs_out = outputs[:, :inputs["input_ids"].shape[1]]
                     outputs = outputs[:, inputs["input_ids"].shape[1]:]
+                    lst_inputs_decoded = self.tokenizer.batch_decode(inputs_out, skip_special_tokens=True)
                     lst_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
                 else:
                     outputs = model(inputs)
@@ -636,8 +641,9 @@ class MyTester:
                 metrics = ['precision','recall','fmeasure']
                 for i, decoded in enumerate(lst_decoded):
                     i_sample = i_ba * self.batch_size + i
-                    print('actual==\n',dataset[i_sample].label[0])
-                    print('generated==\n',decoded)
+                    print('Prompt:\n',lst_inputs_decoded[i])
+                    print('Actual:\n',dataset[i_sample].label[0])
+                    print('Generated:\n',decoded)
                     rouge_scores = scorer.score(dataset[i_sample].label[0], decoded)
                     rouge_dict = {rouge:{metric:[] for metric in metrics} for rouge in rouges}
                     for rouge_idx, rouge in enumerate(rouges):
