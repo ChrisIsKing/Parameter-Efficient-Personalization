@@ -12,7 +12,9 @@ from transformers import (
     AutoTokenizer,
     PreTrainedTokenizer,
     AutoModelForCausalLM,
-    AutoConfig
+    LlamaForSequenceClassification,
+    LlamaForCausalLM,
+    LlamaConfig
 )
 from peft import get_peft_model, PeftConfig, PeftModel, PeftModelForSeq2SeqLM
 from peft import TaskType, LoraConfig,  PrefixTuningConfig, PromptEncoderConfig, PromptTuningConfig
@@ -31,29 +33,32 @@ logger = get_logger('PEFT Baseline')
 
 
 PEFT_METHODS = ["lora", "prefix", "p_tuning", "prompt_tuning"]
-CAUSAL_LM = ["llama"]
 DEFAULT_PEFT_METHOD = 'lora'
 
 
 def parse_args():
     out = get_arg_parser(default_method=DEFAULT_PEFT_METHOD, method_choices=PEFT_METHODS)
     out.test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
+    out.test_parser.add_argument("--use_user_profile", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
     return out.parser.parse_args()
 
 
 def load_model(
         model_name_or_path: str = HF_MODEL_NAME, peft_method: str = DEFAULT_PEFT_METHOD,
-        verbose: bool = False, logger_fl: Logger = None
+        verbose: bool = False, logger_fl: Logger = None, is_generative: bool = False
 ) -> PeftModelForSeq2SeqLM:
     log = model_util.LoadModelLogging(logger=logger, logger_fl=logger_fl, verbose=verbose)
     cache_dir = log.get_n_log_cache_dir(model_name_or_path=model_name_or_path)
 
-    config = AutoConfig.from_pretrained(model_name_or_path)#, torch_dtype=torch.float16) #TODO fp16
-    if config.model_type in CAUSAL_LM:
-        model = AutoModelForCausalLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)#, torch_dtype=torch.float16) #TODO fp16
-        model.resize_token_embeddings(model.config.vocab_size + 1)
+    if 'llama' in model_name_or_path.lower():
+        config = LlamaConfig.from_pretrained(model_name_or_path)
+        if not is_generative:
+            config.num_labels = 2
+            model = LlamaForSequenceClassification.from_pretrained(model_name_or_path, config=config, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
+        else:
+            model = LlamaForCausalLM.from_pretrained(model_name_or_path, config=config, cache_dir=cache_dir, torch_dtype=torch.bfloat16)
     else:
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)#, torch_dtype=torch.float16) #TODO fp16
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
 
     if peft_method is not None:
         ca.check_mismatch('PEFT method', peft_method, PEFT_METHODS)
@@ -62,7 +67,7 @@ def load_model(
         if logger_fl:
             logger_fl.info('Loading Peft model...')
 
-        config_d: Dict[str, Any] = dict(task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False)
+        config_d: Dict[str, Any] = dict(task_type=(TaskType.CAUSAL_LM if 'llama' in model_name_or_path.lower() else TaskType.SEQ_2_SEQ_LM), inference_mode=False)
         _same_param_exp = False
         if peft_method == 'lora':
             peft_config = LoraConfig(**config_d, r=1 if _same_param_exp else 8, lora_alpha=32, lora_dropout=0.1)
@@ -114,9 +119,16 @@ def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple
         logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
 
     config = PeftConfig.from_pretrained(model_name_or_path)
-    model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir)
-    model = PeftModel.from_pretrained(model, model_name_or_path)
-    tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
+
+    if 'llama' in model_name_or_path.lower():
+        model = LlamaForSequenceClassification.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
+        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
+        # model.resize_token_embeddings(len(tokenizer))
+        tokenizer.padding_side = "left"
+    else:
+        model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
+        model = PeftModel.from_pretrained(model, model_name_or_path)
+        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
 
     if torch.cuda.is_available():
         model = model.cuda()
@@ -138,12 +150,12 @@ class TrainSaver:
 
 
 def _get_dataset_and_users_it(
-        dataset_name: str, dataset_path: str = None, leakage: bool = False,
-        uid_start_from: Union[str, int] = None, uid_end_at: Union[str, int] = None, seed: int = None, use_user_profile: bool = False
+        dataset_name: str, leakage: bool = False,
+        uid_start_from: Union[str, int] = None, uid_end_at: Union[str, int] = None, seed: int = None, use_user_profile: bool = False, is_generative: bool = False
 ) -> Tuple[Dict[str, InputEgDataset], List[str]]:
     # from peft_u._dset_uid_too_small import uid_too_small
 
-    dset = load_dataset_with_prompts(dataset_name=dataset_name, dataset_path=dataset_path, leakage=leakage, seed=seed, use_user_profile=use_user_profile)
+    dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile, max_example_count=3)
 
     filt = None
     # if dataset_name in uid_too_small:
@@ -163,11 +175,12 @@ if __name__ == '__main__':
         cmd = args.mode
         if cmd == 'train':
             model_name_or_path, method = args.model, args.method
-            dataset_name, leakage, dataset_path = args.dataset_name, args.leakage, args.dataset_path
+            dataset_name, leakage = args.dataset_name, args.leakage
             seed = args.seed
             use_user_profile = args.use_user_profile
             output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='peft')
-
+            is_generative = sconfig(f'datasets.{dataset_name}.is_generative')
+            leakage = leakage if not is_generative else False # force no leakage for generative
             # strt = 23  # goemotion
             # strt = 28  # hatexplain
             # strt = 5021  # `measuringhatespeech.lora`
@@ -180,8 +193,8 @@ if __name__ == '__main__':
             # strt = 2687  # wikidetox.p_tuning`
             # strt = '44590228'  # `unhealthyconversations`
             strt = None
-            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed, dataset_path=dataset_path)
-            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, use_user_profile=use_user_profile)
+            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
+            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, use_user_profile=use_user_profile, is_generative=is_generative)
 
             tm = Timer()
             # global_tqdm = True
@@ -193,8 +206,9 @@ if __name__ == '__main__':
             if global_tqdm:
                 it = tqdm(it, desc=f'Training on {pl.i(dataset_name)}')
 
+            tokenizer = train_util.load_tokenizer()
             trainer = train_util.MyTrainer(
-                tokenizer=train_util.load_tokenizer(),
+                tokenizer=tokenizer,
                 seed=seed, batch_size=args.batch_size, num_epochs=args.num_epochs,
                 learning_rate=args.learning_rate, weight_decay=args.weight_decay,
                 output_path=output_path, saver_cls=TrainSaver
@@ -208,14 +222,17 @@ if __name__ == '__main__':
                     logger.info(f'Launching {pl.i(dataset_name)} personalized training for User {user_str_ordinal}...')
                 tm_ = Timer()
 
-                # # if any dataset split is empty, skip
-                # split_sizes = _get_dataset_sizes(dset[uid])
-                # if any(v == 0 for v in split_sizes.values()):
-                #     logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
-                #     continue
+                # if any dataset split is empty, skip
+                split_sizes = get_dataset_sizes(dset[uid])
+                if any(v == 0 for v in split_sizes.values()):
+                    logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
+                    continue
 
                 model = load_model(model_name_or_path=model_name_or_path, peft_method=method, logger_fl=logger_fl)
-                trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False)
+                model = model.to(torch.bfloat16)
+                model.config.pad_token_id = tokenizer.pad_token_id
+
+                trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False, is_generative=is_generative)
                 t_e_ = tm_.end()
                 if not global_tqdm:
                     logger.info(f'Training for User {pl.i(uid)} done in {pl.i(t_e_)}')
@@ -226,10 +243,13 @@ if __name__ == '__main__':
         else:
             assert cmd == 'test'
             model_name_or_path = args.model
-            dataset_name, leakage, dataset_path = args.dataset_name, args.leakage, args.dataset_path
+            dataset_name, leakage = args.dataset_name, args.leakage
             bsz = args.batch_size
             seed = args.seed
+            use_user_profile = args.use_user_profile
             zeroshot = args.zeroshot
+            is_generative = sconfig(f'datasets.{dataset_name}.is_generative')
+            leakage = leakage if not is_generative else False # force no leakage for generative
 
             date = now(fmt='short-date')
             if zeroshot:
@@ -251,27 +271,25 @@ if __name__ == '__main__':
 
             tm = Timer()
             model = None
-            
+            tokenizer = train_util.load_tokenizer(model_name_or_path)
             if zeroshot:  # Load global model for all users
                 load_args = dict(peft_method=None, verbose=True, logger_fl=logger_fl)
-                model = load_model(model_name_or_path=model_name_or_path, **load_args)
+                model = load_model(model_name_or_path=model_name_or_path, is_generative=is_generative, **load_args)
+                model.config.pad_token_id = tokenizer.pad_token_id
                 model.eval()
             else:
                 model_name_or_path = model_util.prepend_local_model_path(model_path=model_name_or_path)
-
-            if model:
-                if model.config.model_type == "llama":
-                    tokenizer = train_util.load_tokenizer(model_name_or_path=model_name_or_path, pad_token="<pad>")
-                else:
-                    tokenizer = train_util.load_tokenizer(model_name_or_path=model_name_or_path)
-            else:
-                tokenizer = train_util.load_tokenizer(model_name_or_path=model_name_or_path)
+            if type(model).__name__ in ('LlamaForSequenceClassification','LlamaForCausalLM'):
+                tokenizer.pad_token_id = tokenizer.eos_token_id
+                tokenizer.padding_side = "left"
+                model.resize_token_embeddings(len(tokenizer))
+                # model.generation_config.pad_token_id = tokenizer.pad_token_id
             # strt = 29044976  # unhealthyconversations
             strt = None
-            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed, dataset_path=dataset_path)
-            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, use_user_profile=use_user_profile)
+            load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile)
+            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, is_generative=is_generative)
             n_user = len(it)
-            d_log = dict(users=it, label_options=sconfig(f'datasets.{dataset_name}.labels'))
+            d_log = dict(users=it)#, label_options=sconfig(f'datasets.{dataset_name}.labels'))
             logger.info(f'Testing w/ {pl.i(d_log)}...')
             logger_fl.info(f'Testing w/ {d_log}...')
 
@@ -283,21 +301,24 @@ if __name__ == '__main__':
             )
             for i, uid in enumerate(it, start=1):
                 torch.cuda.empty_cache()
+                # a = InputExample(guid='0', instruction='Label text as Hateful or Non-hateful', text='I hate you!', prompt_examples="", label=["Hateful"], user_profile=None)
+                # ts = ListDataset([a])#dset[uid].test)
                 ts = ListDataset(dset[uid].test)
 
+                path = os_join(model_name_or_path, uid2u_str(uid), 'trained')
+                if len(ts) == 0 or (not zeroshot and not os.path.exists(path)):
+                    logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
+                    continue
+                    
                 if not zeroshot:  # load trained model for each user
-                    path = os_join(model_name_or_path, uid2u_str(uid), 'trained')
-                    assert os.path.exists(path)  # sanity check
+                    # assert os.path.exists(path)  # sanity check
                     model, tokenizer = load_trained(model_name_or_path=path)
-                # if len(ts) == 0:
-                #     logger.info(f'Skipping User {pl.i(uid)} due to missing trained model or empty test set...')
-                #     continue
 
                 accs[uid] = tester(model=model, dataset=ts, user_id=uid, user_idx=i)
                 if not zeroshot:
                     model.cpu()  # move to CPU then collect memory, otherwise CUDA OOM error
                     gc.collect()
-            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path)
+            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path, is_generative=is_generative)
             train_util.log_n_save_test_results(dataset_name=dataset_name, **out_args)
 
             t_e = tm.end()
@@ -345,3 +366,4 @@ if __name__ == '__main__':
         x = ' '.join(uid2u_str(uid) for uid in it)
         print(x)
     # chore_remove_user_folder_nms()
+

@@ -25,12 +25,12 @@ def hf_model_name_drop_org(model_name: str) -> str:
 
 def map_output_dir_nm(
         model_name: str = None, name: str = None, method: str = None, dataset_name: str = None,
-        method_key: str = None
+        method_key: str = None, use_user_profile: bool = None
 ) -> str:
     d = dict()
     if method_key is not None:
         d[method_key] = method
-    d |= dict(md_nm=hf_model_name_drop_org(model_name), ds=dataset_name)
+    d |= dict(md_nm=hf_model_name_drop_org(model_name), ds=dataset_name, up=use_user_profile)
     date = now(fmt='short-date')
     ret = f'{date}_{pl.pa(d, omit_none_val=True)}'
     if name:

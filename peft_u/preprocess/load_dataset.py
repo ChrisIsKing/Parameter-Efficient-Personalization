@@ -1,10 +1,10 @@
 import re
 import json
-import csv
 import random
 from os.path import join as os_join
 from typing import List, Dict, Union, Any, Callable
 from dataclasses import dataclass
+import csv
 
 from torch.utils.data import Dataset
 
@@ -83,13 +83,10 @@ class ListDataset(Dataset):
         return len(self.lst)
 
 
-def _load_dataset(dataset_name: str = None, leakage: bool = False, dataset_path: str = None) -> PersonalizedDataset:
+def _load_dataset(dataset_name: str = None, leakage: bool = False) -> PersonalizedDataset:
     leak_str = 'leaked' if leakage else 'no_leak'
     data_dir_nm = os_join(dataset_name, f'user_data_{leak_str}.json')
-    if dataset_path is None:
-        data_path = os_join(u.proj_path, u.dset_dir, data_dir_nm)
-    else:
-        data_path = os_join(dataset_path, data_dir_nm)
+    data_path = os_join(u.proj_path, u.dset_dir, data_dir_nm)
 
     d_log = dict(dataset_name=dataset_name, leakage=leakage, path=data_path)
     logger.info(f'Loading data w/ {pl.i(d_log)}...')
@@ -98,7 +95,7 @@ def _load_dataset(dataset_name: str = None, leakage: bool = False, dataset_path:
     return data
 
 def _load_user_profiles(dataset_name: str = None) -> Dict:
-    data_path = os_join(u.proj_path, 'user_context/profiles_n20', dataset_name, 'profiles.csv')
+    data_path = os_join(u.proj_path, 'user_context/profiles_n20', dataset_name.split('_',1)[0], 'profiles.csv')
     data = {}
     with open(data_path, mode='r') as f:
         reader = csv.DictReader(f)
@@ -107,7 +104,7 @@ def _load_user_profiles(dataset_name: str = None) -> Dict:
     return data
 
 def load_dataset_with_prompts(
-        dataset_name: str, dataset_path: str = None, leakage: bool = False,
+        dataset_name: str, leakage: bool = False,
         example_count: int = 1, max_example_count: int = 3, per_user: bool = True, seed: int = 42, use_user_profile: bool = False
 ) -> Union[InputEgDataset, Dict[str, InputEgDataset]]:
     """
@@ -122,16 +119,17 @@ def load_dataset_with_prompts(
     :param seed: random seed for sampling prompt examples
     """
     ret = dict()
+    
+    is_generative = sconfig(f'datasets.{dataset_name}.is_generative')
+    text_col = 'text' if not is_generative else ('question' if dataset_name != 'goodreads' else 'book_description')
+    label_col = 'label' if not is_generative else ('answer' if dataset_name != 'goodreads' else 'review')
     instruction = sconfig(f'datasets.{dataset_name}.instruction')
+    dset = _load_dataset(dataset_name=dataset_name, leakage=leakage)
     user_profiles = _load_user_profiles(dataset_name=dataset_name) if use_user_profile else None
-    if dataset_path is None:
-        dset = _load_dataset(dataset_name=dataset_name, leakage=leakage)
-    else:
-        dset = _load_dataset(dataset_name=dataset_name, leakage=leakage, dataset_path=dataset_path)
 
     for uid, dset_ in dset.items():
         def split2label_options(split: str) -> List[str]:
-            return sorted(set().union(*[v['label'] for k, v in dset_[split].items()]))
+            return sorted(set().union(*[v[label_col] for k, v in dset_[split].items()]))
 
         # Get all labels in the train split
         label_options = split2label_options('train')
@@ -139,7 +137,7 @@ def load_dataset_with_prompts(
         # assert label_options == split2label_options('val') == split2label_options('test')
 
         lb2txts: Dict[str, List[str]] = {  # label => list of examples w/ that label
-            label: [sample['text'] for id_, sample in dset_['train'].items() if label in sample['label']]
+            label: [sample[text_col] for id_, sample in dset_['train'].items() if label in sample[label_col]]
             for label in label_options
         }
 
@@ -151,7 +149,7 @@ def load_dataset_with_prompts(
                 random.seed(seed)
             lst = []
             for sid, sample in dset_[split].items():
-                text, label = sample['text'], sample['label']
+                text, label = sample[text_col], sample[label_col]
 
                 # take n random examples from each category for few-shot prompt
                 prompt_egs = []
@@ -164,7 +162,6 @@ def load_dataset_with_prompts(
                     txts_selected = random.sample(txts, k=min(example_count, len(txts)))
                     prompt_egs += [(txt, lb) for txt in txts_selected]
                 prompt_egs = prompt_egs[:max_example_count]  # keep only first `max_example_count` examples
-
                 lst.append(
                     InputExample(guid=sid, instruction=instruction, text=text, prompt_examples=prompt_egs, label=label, user_profile=user_profiles[uid] if user_profiles else None)
                 )
@@ -189,6 +186,8 @@ _USER_IDS = Union[List[str], List[int]]
 hex_pattern = re.compile(r'^[0-9a-f]+$')
 # For `SubjectiveDiscourse`, user ids are like `worker_50`
 sub_dis_pattern = re.compile(r'^worker_(?P<id>\d+)$')
+# For `TweetEval`, user ids are like `label_M_1`
+tweeteval_pattern = re.compile(r'^label_._(?P<id>\d+)$')
 
 
 def sort_user_ids(uids: _USER_IDS) -> _USER_IDS:
@@ -202,6 +201,11 @@ def sort_user_ids(uids: _USER_IDS) -> _USER_IDS:
         elif all(hex_pattern.match(uid) is not None for uid in uids):
             def sort_fn(x):
                 return int(x, 16)
+        elif all(tweeteval_pattern.match(uid) is not None for uid in uids):
+            def sort_fn(x):
+                match = tweeteval_pattern.match(x)
+                assert match is not None
+                return int(match.group('id'))
         else:
             def sort_fn(x):
                 match = sub_dis_pattern.match(x)
@@ -262,3 +266,4 @@ if __name__ == '__main__':
         dset = load_dataset_with_prompts(dataset_name='tweeteval')
         mic(dset.keys())
     check_add_template()
+

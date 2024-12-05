@@ -11,7 +11,8 @@
                 "offensive"
             ],
             "multi_label": false,
-            "instruction": "Please review the following text and indicate if it has the presence of hate speech or is offensive in nature. Respond 'hatespeech' if the text contains hate speech, 'offensive' if the text does not contain hate speech but is offensive and 'normal' if the text is neither offensive nor contains hate speech."
+            "instruction": "Please review the following text and indicate if it has the presence of hate speech or is offensive in nature. Respond 'hatespeech' if the text contains hate speech, 'offensive' if the text does not contain hate speech but is offensive and 'normal' if the text is neither offensive nor contains hate speech.",
+            "is_generative": false
         },
         "gabhate": {
             "domain": [
@@ -23,7 +24,8 @@
                 "Non-hateful"
             ],
             "multi_label": false,
-            "instruction": "Please review the following text and indicate if it has the presence of hate speech. Respond 'Hateful' if the text contains hate speech and 'Non-hateful' if the text does not contain hate speech."
+            "instruction": "Please review the following text and indicate if it has the presence of hate speech. Respond 'Hateful' if the text contains hate speech and 'Non-hateful' if the text does not contain hate speech.",
+            "is_generative": false
         },
         "measuringhatespeech": {
             "domain": [
@@ -36,7 +38,8 @@
                 "2"
             ],
             "multi_label": false,
-            "instruction": "On a scale of 0-2 rate the level of hatespeech contained in the following text. Respond with '0' if the text does not contain hate speech, '1' if the text contains some hate speech, and '2' if the text contains a lot of hate speech."
+            "instruction": "On a scale of 0-2 rate the level of hatespeech contained in the following text. Respond with '0' if the text does not contain hate speech, '1' if the text contains some hate speech, and '2' if the text contains a lot of hate speech.",
+            "is_generative": false
         },
         "tweeteval": {
             "domain": [
@@ -48,7 +51,8 @@
                 "Non-hateful"
             ],
             "multi_label": false,
-            "instruction": "Please review the following text and indicate if it has the presence of hate speech. Respond 'Hateful' if the text contains hate speech and 'Non-hateful' if the text does not contain hate speech."
+            "instruction": "Please review the following text and indicate if it has the presence of hate speech. Respond 'Hateful' if the text contains hate speech and 'Non-hateful' if the text does not contain hate speech.",
+            "is_generative": false
         },
         "unhealthyconversations": {
             "domain": [
@@ -60,7 +64,8 @@
                 "unhealthy"
             ],
             "multi_label": false,
-            "instruction": "Please review the following text and indicated if it is 'healthy' or 'unhealthy'. Respond 'healthy' if the text is healthy and 'unhealthy' if the text can be considered hostile, antagonistic, condescending, dismissive or an unfair generalization."
+            "instruction": "Please review the following text and indicated if it is 'healthy' or 'unhealthy'. Respond 'healthy' if the text is healthy and 'unhealthy' if the text can be considered hostile, antagonistic, condescending, dismissive or an unfair generalization.",
+            "is_generative": false
         },
         "wikidetox": {
             "domain": [
@@ -72,7 +77,8 @@
                 "Normal"
             ],
             "multi_label": false,
-            "instruction": "Please review the following text and indicate if it has the presence of malicious remark to a person or group. Respond 'Aggressive' if the text contains a personal attack and 'Normal' if the text does not contain a personal attack."
+            "instruction": "Please review the following text and indicate if it has the presence of malicious remark to a person or group. Respond 'Aggressive' if the text contains a personal attack and 'Normal' if the text does not contain a personal attack.",
+            "is_generative": false
         },
         "goemotion": {
             "domain": [
@@ -87,7 +93,8 @@
                 "surprise"
             ],
             "multi_label": true,
-            "instruction": "Please analyze the following text and assign one or more appropriate emotion labels. Emotion labels include happiness, sadness, anger, surprise, joy, fear, disgust. You can select one or multiple emotion labels that best capture the emotional content of the text. Respond with the emotion labels separated by a comma."
+            "instruction": "Please analyze the following text and assign one or more appropriate emotion labels. Emotion labels include happiness, sadness, anger, surprise, joy, fear, disgust. You can select one or multiple emotion labels that best capture the emotional content of the text. Respond with the emotion labels separated by a comma.",
+            "is_generative": false
         },
         "studemo": {
             "domain": [
@@ -106,7 +113,8 @@
                 "valence"
             ],
             "multi_label": true,
-            "instruction": "Please analyze the following text and assign one or more appropriate emotion labels. Emotion labels include joy, trust, anticipation, surprise, fear, sadness, disgust, anger, valence, and arousal. You can select one or multiple emotion labels that best capture the emotional content of the text. Respond with the emotion labels separated by a comma."
+            "instruction": "Please analyze the following text and assign one or more appropriate emotion labels. Emotion labels includejoy, trust, anticipation, surprise, fear, sadness, disgust, anger, valence, and arousal. You can select one or multiple emotion labels that best capture the emotional content of the text. Respond with the emotion labels separated by a comma.",
+            "is_generative": false
         },
         "cockamamie": {
             "domain": [
@@ -117,7 +125,8 @@
                 "yes"
             ],
             "multi_label": false,
-            "instruction": "Please rate whether the following text is funny or not funny. Respond 'yes' if you think the text is funny and 'no' if you think the text is not funny."
+            "instruction": "Please rate whether the following text is funny or not funny. Respond 'yes' if you think the text is funny and 'no' if you think the text is not funny.",
+            "is_generative": false
         },
         "epic": {
             "domain": [
@@ -128,7 +137,8 @@
                 "Non-ironic"
             ],
             "multi_label": false,
-            "instruction": "Irony is a figurative language device that conveys that opposite of literal meaning, profiling intentionally a secondary or extended meaning. Please review the following message and reply and indicate if it has the presence of irony. Respond 'Ironic' if the reply if you think the reply is ironic and 'Non-ironic' if you think the reply is not ironic."
+            "instruction": "Irony is a figurative language device that conveys that opposite of literal meaning, profiling intentionally a secondary or extended meaning. Please review the following message and reply and indicate if it has the presence of irony. Respond 'Ironic' if the reply if you think the reply is ironic and 'Non-ironic' if you think the reply is not ironic.",
+            "is_generative": false
         },
         "subjectivediscourse_response": {
             "domain": [
@@ -143,7 +153,8 @@
                 "shift-dodge"
             ],
             "multi_label": false,
-            "instruction": "Please analyze the following text and indicate how the witness responded to the question. Respond with 'answer' if they answered the question reasonably, 'cant-answer-lying' if they could not answer and are lying, 'cant-answer-sincere' if they could not answer but are honest about it, 'shift-dodge' if they shifted the topic with the intent of dodging the question, 'answer_overans-sway' if they over answered the question with the intention of swaying or 'shift-correct' if they shifted the topic with the intention of clarifying the question."
+            "instruction": "Please analyze the following text and indicate how the witness responded to the question. Respond with 'answer' if they answered the question reasonably, 'cant-answer-lying' if they could not answer and are lying, 'cant-answer-sincere' if they could not answer but are honest about it, 'shift-dodge' if they shifted the topic with the intent of dodging the question, 'answer_overans-sway' if they over answered the question with the intention of swaying or 'shift-correct' if they shifted the topic with the intention of clarifying the question.",
+            "is_generative": false
         },
         "subjectivediscourse_question_sentiment": {
             "domain": [
@@ -159,7 +170,8 @@
                 "very-positive"
             ],
             "multi_label": false,
-            "instruction": "Please analyze the following text and rate your sentiment towards the questioners. Sentiment labels include 'somewhat-positive', 'positive', 'very-positive', 'somewhat-negative', 'very-negative', 'neutral' and 'negative'. Respond with the sentiment label that best captures your sentiment towards the questioners."
+            "instruction": "Please analyze the following text and rate your sentiment towards the questioners. Sentiment labels include 'somewhat-positive', 'positive', 'very-positive', 'somewhat-negative', 'very-negative', 'neutral' and 'negative'. Respond with the sentiment label that best captures your sentiment towards the questioners.",
+            "is_generative": false
         },
         "subjectivediscourse_response_sentiment": {
             "domain": [
@@ -175,7 +187,64 @@
                 "very-positive"
             ],
             "multi_label": false,
-            "instruction": "Please analyze the following text and rate your sentiment towards the witness. Sentiment labels include 'somewhat-positive', 'positive', 'very-positive', 'somewhat-negative', 'very-negative', 'neutral' and 'negative'. Respond with the sentiment label that best captures your sentiment towards the witness."
+            "instruction": "Please analyze the following text and rate your sentiment towards the witness. Sentiment labels include 'somewhat-positive', 'positive', 'very-positive', 'somewhat-negative', 'very-negative', 'neutral' and 'negative'. Respond with the sentiment label that best captures your sentiment towards the witness.",
+            "is_generative": false
+        },
+        "goodreads": {
+            "domain": [
+                "generative book review response"
+            ],
+            "instruction": "Write a book review given the book title and description",
+            "is_generative": true
+        },
+        "interpersonal": {
+            "domain": [
+                "generative question-answer response"
+            ],
+            "instruction": "Answer the question",
+            "is_generative": true
+        },
+        "judaism": {
+            "domain": [
+                "generative question-answer response"
+            ],
+            "instruction": "Answer the question",
+            "is_generative": true
+        },
+        "parenting": {
+            "domain": [
+                "generative question-answer response"
+            ],
+            "instruction": "Answer the question",
+            "is_generative": true
+        },
+        "philosophy": {
+            "domain": [
+                "generative question-answer response"
+            ],
+            "instruction": "Answer the question",
+            "is_generative": true
+        },
+        "travel": {
+            "domain": [
+                "generative question-answer response"
+            ],
+            "instruction": "Answer the question",
+            "is_generative": true
+        },
+        "workplace": {
+            "domain": [
+                "generative question-answer response"
+            ],
+            "instruction": "Answer the question",
+            "is_generative": true
+        },
+        "worldbuilding": {
+            "domain": [
+                "generative question-answer response"
+            ],
+            "instruction": "Answer the question",
+            "is_generative": true
         }
     }
 }

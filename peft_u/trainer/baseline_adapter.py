@@ -31,6 +31,7 @@ import peft_u.util.models as model_util
 import peft_u.trainer.train as train_util
 from peft_u.preprocess.load_dataset import *
 from peft_u.trainer import HF_MODEL_NAME, get_arg_parser
+from torch.cuda.amp import autocast #TODO fp16
 
 
 logger = get_logger('Adapter Baseline')
@@ -59,7 +60,9 @@ def reduce_hf_logging():
 
 
 def parse_args():
-    return get_arg_parser(default_method=DEFAULT_ADAPTER_METHOD, method_choices=ADAPTER_METHODS).parser.parse_args()
+    out = get_arg_parser(default_method=DEFAULT_ADAPTER_METHOD, method_choices=ADAPTER_METHODS)
+    out.test_parser.add_argument("--use_user_profile", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
+    return out.parser.parse_args()
 
 
 def get_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> T5TokenizerFast:
@@ -70,10 +73,10 @@ def get_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> T5TokenizerFast:
 
 
 def load_dataset(
-        dataset_name: str = None, dataset_path: str = None, leakage: bool = None, seed: int = None, load_users_args: Dict[str, Any] = None,
+        dataset_name: str = None, leakage: bool = None, seed: int = None, load_users_args: Dict[str, Any] = None,
         tokenizer: T5TokenizerFast = None, tokenize: bool = True, use_user_profile:bool = False, **kwargs
 ) -> Tuple[Dict[str, DatasetDict], List[str]]:
-    dsets = load_dataset_with_prompts(dataset_name=dataset_name, dataset_path=dataset_path, leakage=leakage, seed=seed, use_user_profile=use_user_profile)
+    dsets = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile)
 
     user_ids = iter_users(dataset=dsets, **(load_users_args or dict()))
     n_original_user, n_user = len(dsets), len(user_ids)
@@ -93,7 +96,7 @@ def load_dataset(
             train=Dataset.from_generator(get_gen(u_data.train), cache_dir=c_dir),
             validation=Dataset.from_generator(get_gen(u_data.val), cache_dir=c_dir),
             test=Dataset.from_generator(get_gen(u_data.test), cache_dir=c_dir)
-        ) for uid, u_data in dsets.items()
+        ) for uid, u_data in dsets.items() if not (len(u_data.train) == 0 or len(u_data.val) == 0 or len(u_data.test) == 0)
     }
 
     if tokenize:
@@ -101,7 +104,7 @@ def load_dataset(
             return train_util.BatchCollator(tokenizer)(texts=batch['text'], labels=batch['label'])
         return {uid: u_dset.map(map_single, batched=True, **kwargs) for uid, u_dset in dsets.items()}, user_ids
     else:
-        return dsets, user_ids
+        return dsets, dsets.keys()
 
 
 def get_train_meta(
@@ -113,6 +116,7 @@ def get_train_meta(
         output_dir=output_path,
         do_train=True,
         do_eval=True,
+        fp16=True,
         optim=OptimizerNames.ADAMW_TORCH,
         learning_rate=args.learning_rate,
         lr_scheduler_type=SchedulerType.LINEAR,  # same w/ adapter baseline
@@ -131,7 +135,8 @@ def get_train_meta(
         report_to='none',
         load_best_model_at_end=True,
         metric_for_best_model='eval_loss',
-        greater_is_better=False
+        greater_is_better=False,
+        save_total_limit=1
     )
     if verbose:
         logger.info(f'Training args: {pl.fmt(train_args)}')
@@ -146,14 +151,14 @@ def get_train_meta(
 def load_t5_model_with_lm_head(
         model_name_or_path: str = HF_MODEL_NAME, dummy_hf_model_name: str = HF_MODEL_NAME
 ) -> T5AdapterModel:
-    model = T5AdapterModel.from_pretrained(model_name_or_path)  # Should observe a warning on `lm_head.weight` not used
+    model = T5AdapterModel.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16)  # Should observe a warning on `lm_head.weight` not used
 
     # Use a different name so that the LM head is frozen & will not be saved to disk
     model.add_seq2seq_lm_head(head_name='__LM-Head-Frozen__')
 
     # Since there's not a LM head version of `T5AdapterModel`,
     # use the LM head from the HF model and set it to frozen, i.e. override `train_adapter` on the LM head
-    model_dummy = AutoModelForSeq2SeqLM.from_pretrained(dummy_hf_model_name)
+    model_dummy = AutoModelForSeq2SeqLM.from_pretrained(dummy_hf_model_name, torch_dtype=torch.bfloat16)
     state_d = model_dummy.lm_head.state_dict()
     assert set(state_d.keys()) == {'weight'}  # sanity check
     pretrained_lm_weight = state_d['weight']
@@ -209,10 +214,12 @@ if __name__ == '__main__':
         cmd = args.mode
         if cmd == 'train':
             model_name_or_path, method = args.model, args.method
-            dataset_name, leakage, dataset_path = args.dataset_name, args.leakage, args.dataset_path
+            dataset_name, leakage = args.dataset_name, args.leakage
             seed = args.seed
             use_user_profile = args.use_user_profile
             output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='adapter')
+            is_generative = sconfig(f'datasets.{dataset_name}.is_generative')
+            leakage = leakage if not is_generative else False # force no leakage for generative
 
             tokenizer = get_tokenizer(model_name_or_path=model_name_or_path)
 
@@ -244,7 +251,7 @@ if __name__ == '__main__':
                 train_args, logger_fl_, output_path_ = get_train_meta(args=args, output_path=output_path, user_id=uid)
                 trainer = train_util.MyAdapterTrainer(
                     logger_fl=logger_fl_, model=model, args=train_args, tokenizer=tokenizer,
-                    train_dataset=dset['train'], eval_dataset=dset['validation']
+                    train_dataset=dset['train'], eval_dataset=dset['validation'],
                 )
 
                 user_str_ordinal = train_util.get_user_str_w_ordinal(user_id=uid, user_idx=i, n_user=n_user)
@@ -268,12 +275,16 @@ if __name__ == '__main__':
         else:
             assert cmd == 'test'
             model_name_or_path = args.model
-            dataset_name, leakage, dataset_path = args.dataset_name, args.leakage, args.dataset_path
+            dataset_name, leakage = args.dataset_name, args.leakage
             bsz = args.batch_size
             seed = args.seed
+            use_user_profile = args.use_user_profile
+            is_generative = sconfig(f'datasets.{dataset_name}.is_generative')
+            leakage = leakage if not is_generative else False # force no leakage for generative
 
             date = now(fmt='short-date')
-            eval_output_path = os_join(u.proj_path, 'eval', f'{model_name_or_path}_Eval-{date}' if not use_user_profile else f'{model_name_or_path}__UserProfile-Eval-{date}')
+            eval_out_str = f'{model_name_or_path}_Eval-{date}' if not use_user_profile else f'{model_name_or_path}_UserProfle-Eval-{date}'
+            eval_output_path = os_join(u.eval_path, eval_out_str)
             os.makedirs(eval_output_path, exist_ok=True)
 
             d_log = dict(
@@ -293,7 +304,7 @@ if __name__ == '__main__':
             n_user = len(it)
 
             label_options = sconfig(f'datasets.{dataset_name}.labels')
-            d_log = dict(users=it, label_options=label_options)
+            d_log = dict(users=it, label_options=label_options, use_user_profile=use_user_profile)
             logger.info(f'Testing w/ {pl.i(d_log)}...')
             logger_fl.info(f'Testing w/ {d_log}...')
 
@@ -321,11 +332,13 @@ if __name__ == '__main__':
                     idxs = [int(idx) for idx in idxs]
                     inputs = {k: torch.tensor(v) for k, v in dset[idxs].items() if k not in ['text', 'label', 'labels']}
                     if torch.cuda.is_available():
-                        inputs = {k: v.cuda() for k, v in inputs.items()}
+                        inputs = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in inputs.items()}
+                        # inputs = {k: v.cuda() for k, v in inputs.items()}
                     labels = dset[idxs]['label']
 
                     with torch.no_grad():
-                        outputs = model.generate(**inputs, max_new_tokens=16)
+                        with autocast(dtype=torch.bfloat16):
+                            outputs = model.generate(**inputs, max_new_tokens=16)
                     lst_decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
                     for idx, lb, dec in zip(idxs, labels, lst_decoded):
@@ -337,7 +350,7 @@ if __name__ == '__main__':
                             label_options=label_options, trues=trues, preds=preds, pbar=it, d_postfix=d_it,
                             df_out_path=os_join(eval_output_path, f'{user_str}.csv')
                         )
-            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path)
+            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path, is_generative=is_generative)
             train_util.log_n_save_test_results(dataset_name=dataset_name, **out_args)
 
             t_e_ = tm_.end()
@@ -369,3 +382,4 @@ if __name__ == '__main__':
                 untrained.append(uid)
         mic(untrained)
     # check_untrained_users()
+

@@ -8,6 +8,7 @@ import random
 from os.path import join as os_join
 from typing import Tuple, List, Dict, Any
 from collections import defaultdict
+import numpy as np
 
 import nltk
 from nltk.metrics.distance import masi_distance
@@ -161,31 +162,32 @@ def avg_num_users_per_example(user_data):
             if post_id not in num_users_per_example:
                 num_users_per_example[post_id] = 0
             num_users_per_example[post_id] += 1
-
     return sum(num_users_per_example.values()) / len(num_users_per_example)
 
 
-def save_datasets(data: PersonalizedData = None, base_path: str = None, label_key: str = 'label'):
+def save_datasets(data: PersonalizedData = None, base_path: str = None, label_key: str = 'label', is_generative: bool = False):
     """
     Saves processed personalized dataset as json files on disk, one leaked and one non-leaked.
     """
     def check_label(label: List[str]):
         return len(label) > 0 and all(isinstance(lb, str) for lb in label)
     # sanity check each `label` is a list of strings
-    assert all(all(check_label(sample['label']) for sid, sample in samples.items()) for uid, samples in data.items())
+    assert is_generative or all(all(check_label(sample['label']) for sid, sample in samples.items()) for uid, samples in data.items())
 
     num_annotators = len(data)
     num_examples = sum([len(v) for k, v in data.items()])
 
     split_args = dict(data=data, train_split_ratio=0.8, seed=42, label_key=label_key)
-    user_data_leaked, agreement_data, too_small = data2dataset_splits(**split_args, leakage=True)
     user_data_no_leak, agreement_data_, too_small_ = data2dataset_splits(**split_args, leakage=False)
-    assert set(agreement_data) == set(agreement_data_)  # sanity check
+    if not is_generative:
+        user_data_leaked, agreement_data, too_small = data2dataset_splits(**split_args, leakage=True)
+        assert set(agreement_data) == set(agreement_data_)  # sanity check
 
     masi_task = nltk.AnnotationTask(distance=masi_distance)
-    masi_task.load_array(agreement_data)
+    if not is_generative:
+        masi_task.load_array(agreement_data)
     d_log = {
-        'Krippendorff\'s alpha': masi_task.alpha(),
+        'Krippendorff\'s alpha': masi_task.alpha() if not is_generative else np.nan,
         '#Users': num_annotators,
         '#Examples': num_examples,
         'Avg #Examples/User': num_examples/num_annotators,
@@ -194,10 +196,11 @@ def save_datasets(data: PersonalizedData = None, base_path: str = None, label_ke
     logger.info(pl.i(d_log))
 
     # Save the data
-    fnm_leaked = os_join(base_path, 'user_data_leaked.json')
-    with open(fnm_leaked, 'w') as f:
-        json.dump(user_data_leaked, f)
-    logger.info(f'Leaked data saved to {pl.i(fnm_leaked)}')
+    if not is_generative:
+        fnm_leaked = os_join(base_path, 'user_data_leaked.json')
+        with open(fnm_leaked, 'w') as f:
+            json.dump(user_data_leaked, f)
+        logger.info(f'Leaked data saved to {pl.i(fnm_leaked)}')
 
     fnm_no_leak = os_join(base_path, 'user_data_no_leak.json')
     with open(fnm_no_leak, 'w') as f:
@@ -206,5 +209,8 @@ def save_datasets(data: PersonalizedData = None, base_path: str = None, label_ke
 
     fnm_small_user = os_join(base_path, 'users-with-empty-dataset-splits.json')
     with open(fnm_small_user, 'w') as f:
-        json.dump(dict(leaked=too_small, no_leak=too_small_), f, indent=2)
+        if is_generative:
+            json.dump(dict(no_leak=too_small_), f, indent=2)
+        else:
+            json.dump(dict(leaked=too_small, no_leak=too_small_), f, indent=2)
     logger.info(f'Users with empty dataset splits saved to {pl.i(fnm_small_user)}')

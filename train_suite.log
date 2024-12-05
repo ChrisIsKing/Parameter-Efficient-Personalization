@@ -1,0 +1,75 @@
+2024-11-23 18:04:28,991 - INFO - Training params: {'method': 'prompt_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 8}
+2024-11-23 18:04:44,194 - INFO - Failed prep for tweeteval
+2024-11-23 18:04:44,346 - INFO - Failed prep for parenting
+2024-11-23 18:04:44,501 - INFO - Failed prep for epic
+2024-11-23 18:04:44,970 - INFO - Failed prep for philosophy
+2024-11-23 18:04:45,531 - INFO - Failed train for subjectivediscourse
+2024-11-23 18:04:45,879 - INFO - Failed train for hatexplain
+2024-11-23 18:04:46,021 - INFO - Failed train for goemotion
+2024-11-23 18:04:46,058 - INFO - Failed train for gabhate
+2024-11-23 18:04:46,171 - INFO - Failed train for judaism
+2024-11-23 18:04:46,271 - INFO - Failed train for interpersonal
+2024-11-23 18:04:46,316 - INFO - Failed train for tweeteval
+2024-11-23 18:04:46,457 - INFO - Failed train for parenting
+2024-11-23 18:04:46,482 - INFO - Failed train for travel
+2024-11-23 18:04:46,602 - INFO - Failed train for epic
+2024-11-23 18:04:46,675 - INFO - Failed train for studemo
+2024-11-23 18:04:46,746 - INFO - Failed train for philosophy
+2024-11-23 18:05:23,336 - INFO - Training params: {'method': 'prompt_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 8}
+2024-11-23 18:05:32,348 - INFO - Failed prep for judaism
+2024-11-23 18:05:32,754 - INFO - Failed prep for unhealthyconversations
+2024-11-23 18:05:33,165 - INFO - Failed prep for tweeteval
+2024-11-23 18:05:33,362 - INFO - Failed prep for parenting
+2024-11-23 18:05:33,520 - INFO - Failed prep for epic
+2024-11-23 18:05:33,856 - INFO - Failed prep for philosophy
+2024-11-23 18:05:34,441 - INFO - Failed train for subjectivediscourse
+2024-11-23 18:05:34,540 - INFO - Failed train for hatexplain
+2024-11-23 18:05:34,623 - INFO - Failed train for goemotion
+2024-11-23 18:05:34,725 - INFO - Failed train for gabhate
+2024-11-23 18:05:34,859 - INFO - Failed train for judaism
+2024-11-23 18:05:34,981 - INFO - Failed train for interpersonal
+2024-11-23 18:05:35,042 - INFO - Failed train for tweeteval
+2024-11-23 18:05:35,144 - INFO - Failed train for parenting
+2024-11-23 18:05:35,231 - INFO - Failed train for travel
+2024-11-23 18:05:35,283 - INFO - Failed train for epic
+2024-11-23 18:05:35,433 - INFO - Failed train for studemo
+2024-11-23 18:05:35,488 - INFO - Failed train for philosophy
+2024-11-23 18:05:36,989 - INFO - Training params: {'method': 'prompt_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 8}
+2024-11-23 18:06:28,114 - INFO - Failed train for epic
+2024-11-23 18:06:28,237 - INFO - Failed train for studemo
+2024-11-23 18:06:28,798 - INFO - Failed train for philosophy
+2024-11-23 18:07:07,550 - INFO - Training params: {'method': 'prompt_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 8}
+2024-11-23 18:07:10,774 - INFO - Failed prep for workplace
+2024-11-23 18:07:11,107 - INFO - Failed prep for gabhate
+2024-11-23 18:07:11,198 - INFO - Failed prep for judaism
+2024-11-23 18:07:11,289 - INFO - Failed prep for unhealthyconversations
+2024-11-23 18:07:11,372 - INFO - Failed prep for tweeteval
+2024-11-23 18:07:11,450 - INFO - Failed prep for parenting
+2024-11-23 18:07:11,538 - INFO - Failed prep for epic
+2024-11-23 18:07:11,621 - INFO - Failed prep for philosophy
+2024-11-23 18:07:11,705 - INFO - Failed train for subjectivediscourse
+2024-11-23 18:07:11,788 - INFO - Failed train for hatexplain
+2024-11-23 18:07:11,871 - INFO - Failed train for goemotion
+2024-11-23 18:07:11,955 - INFO - Failed train for gabhate
+2024-11-23 18:07:12,044 - INFO - Failed train for judaism
+2024-11-23 18:07:12,121 - INFO - Failed train for interpersonal
+2024-11-23 18:07:12,211 - INFO - Failed train for tweeteval
+2024-11-23 18:07:12,348 - INFO - Failed train for parenting
+2024-11-23 18:07:12,365 - INFO - Failed train for travel
+2024-11-23 18:07:12,454 - INFO - Failed train for epic
+2024-11-23 18:07:12,538 - INFO - Failed train for studemo
+2024-11-23 18:07:12,627 - INFO - Failed train for philosophy
+2024-11-23 18:13:33,811 - INFO - Training params: {'method': 'prompt_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 8}
+2024-11-23 18:30:53,115 - INFO - Failed train for gabhate
+2024-11-23 18:30:53,147 - INFO - Failed train for judaism
+2024-11-23 18:30:53,730 - INFO - Failed train for subjectivediscourse_response_sentiment
+2024-11-23 18:30:53,853 - INFO - Failed train for interpersonal
+2024-11-23 18:30:53,937 - INFO - Failed train for tweeteval
+2024-11-23 18:30:53,986 - INFO - Failed train for parenting
+2024-11-23 18:30:54,077 - INFO - Failed train for travel
+2024-11-23 18:30:54,167 - INFO - Failed train for subjectivediscourse_response
+2024-11-23 18:30:54,251 - INFO - Failed train for subjectivediscourse_question_sentiment
+2024-11-23 18:30:54,333 - INFO - Failed train for epic
+2024-11-23 18:30:54,411 - INFO - Failed train for studemo
+2024-11-23 18:30:54,500 - INFO - Failed train for philosophy
+2024-11-23 18:30:56,545 - INFO - Training params: {'method': 'prompt_tuning', 'peft_or_adapter': 'peft', 'use_user_profile': True, 'num_epochs': 8, 'batch_size': 8}
