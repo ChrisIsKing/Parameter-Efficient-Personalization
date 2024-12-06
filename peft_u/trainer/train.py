@@ -103,6 +103,7 @@ def load_tokenizer(model_name_or_path: str = HF_MODEL_NAME) -> PreTrainedTokeniz
     tokenizer.padding = True
     if 'llama' in model_name_or_path.lower():
         tokenizer.model_max_length = 4096
+        tokenizer.padding_side='left'
     else:
         tokenizer.model_max_length = 512
     return tokenizer
