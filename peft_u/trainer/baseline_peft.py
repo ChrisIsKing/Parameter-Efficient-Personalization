@@ -42,6 +42,7 @@ def parse_args():
     out = get_arg_parser(default_method=DEFAULT_PEFT_METHOD, method_choices=PEFT_METHODS)
     out.test_parser.add_argument("--zeroshot", type=bool, required=False, default=False)
     out.test_parser.add_argument("--use_user_profile", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
+    out.test_parser.add_argument("--max_example_count", type=int, required=False, default=3)
     return out.parser.parse_args()
 
 
@@ -163,11 +164,11 @@ class TrainSaver:
 
 def _get_dataset_and_users_it(
         dataset_name: str, leakage: bool = False,
-        uid_start_from: Union[str, int] = None, uid_end_at: Union[str, int] = None, seed: int = None, use_user_profile: bool = False, is_generative: bool = False
+        uid_start_from: Union[str, int] = None, uid_end_at: Union[str, int] = None, seed: int = None, use_user_profile: bool = False, is_generative: bool = False, max_example_count: int = 3
 ) -> Tuple[Dict[str, InputEgDataset], List[str]]:
     # from peft_u._dset_uid_too_small import uid_too_small
 
-    dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile, max_example_count=3)
+    dset = load_dataset_with_prompts(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile, max_example_count=max_example_count)
 
     filt = None
     # if dataset_name in uid_too_small:
@@ -189,6 +190,7 @@ if __name__ == '__main__':
             model_name_or_path, method = args.model, args.method
             dataset_name, leakage = args.dataset_name, args.leakage
             seed = args.seed
+            max_example_count = args.max_example_count
             use_user_profile = args.use_user_profile
             output_path, logger_fl = train_util.setup_train_output_path_n_loggers(args=args, approach='peft')
             is_generative = sconfig(f'datasets.{dataset_name}.is_generative')
@@ -206,7 +208,7 @@ if __name__ == '__main__':
             # strt = '44590228'  # `unhealthyconversations`
             strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed)
-            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, use_user_profile=use_user_profile, is_generative=is_generative)
+            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, use_user_profile=use_user_profile, is_generative=is_generative, max_example_count=max_example_count)
 
             tm = Timer()
             # global_tqdm = True
@@ -262,7 +264,8 @@ if __name__ == '__main__':
             bsz = args.batch_size
             seed = args.seed
             use_user_profile = args.use_user_profile
-            zeroshot = args.zeroshot
+            zeroshot = args.zeroshot,
+            max_example_count = args.max_example_count
             is_generative = sconfig(f'datasets.{dataset_name}.is_generative')
             leakage = leakage if not is_generative else False # force no leakage for generative
 
@@ -302,7 +305,7 @@ if __name__ == '__main__':
             # strt = 29044976  # unhealthyconversations
             strt = None
             load_args = dict(dataset_name=dataset_name, leakage=leakage, seed=seed, use_user_profile=use_user_profile)
-            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, is_generative=is_generative)
+            dset, it = _get_dataset_and_users_it(**load_args, uid_start_from=strt, is_generative=is_generative, max_example_count=max_example_count)
             n_user = len(it)
             d_log = dict(users=it)#, label_options=sconfig(f'datasets.{dataset_name}.labels'))
             logger.info(f'Testing w/ {pl.i(d_log)}...')
@@ -333,7 +336,7 @@ if __name__ == '__main__':
                 if not zeroshot:
                     model.cpu()  # move to CPU then collect memory, otherwise CUDA OOM error
                     gc.collect()
-            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path, is_generative=is_generative)
+            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path, is_generative=is_generative, max_example_count=max_example_count)
             train_util.log_n_save_test_results(dataset_name=dataset_name, **out_args)
 
             t_e = tm.end()

@@ -45,9 +45,9 @@ class InputExample:
             prompt += f"User profile: {self.user_profile}"
         for example in self.prompt_examples:
             txt, lb = example
-            prompt += f"Text: {txt} Label: {lb}. "
+            prompt += f"Input: {txt} Output: {lb}. "
 
-        prompt += f"Text: {self.text} Label: "
+        prompt += f"Input: {self.text} Output: "
         return prompt
 
     def process_target(self) -> str:
