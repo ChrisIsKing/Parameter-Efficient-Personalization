@@ -35,7 +35,7 @@ for i in os.walk(parent_dir):
         foo = re.sub(r'(\w+)=([^,}]+)', r'"\1": "\2"', re.search(model_dict_pattern, subdir).group(1))
         model_dict = json.loads(f"{{{foo}}}")
         model_dict['train_date'] = re.search(train_date_pattern, subdir).group(1)
-        # model_dict['test_date'] = re.search(test_date_pattern, subdir).group(1)
+        model_dict['test_date'] = re.search(test_date_pattern, subdir).group(1)
         model_dict['machine'] = 'clarity2'
 
         test_files = [f for f in os.listdir(parent_dir+subdir) if re.match(file_pattern, f)]
@@ -45,13 +45,13 @@ for i in os.walk(parent_dir):
         test_files.sort(key=lambda x: datetime.strptime(re.match(file_pattern, x).group(1), "%Y-%m-%d_%H-%M-%S"), reverse=True)
         test_file_selected = test_files[0] # use most recent
 
-        if model_dict['train_date'] < '24-11-30':
+        if not 'test_date' in model_dict.keys() or model_dict['test_date'] < '24-12-04':
             continue
-        if 'md' in model_dict.keys() and model_dict['md'] != 'Llama-3.2-1B':
-            continue
+        # if 'md' in model_dict.keys() and model_dict['md'] != 'Llama-3.2-1B':
+        #     continue
 
         # Determine metric type
-        if model_dict['dnm'] in generative_datasets:
+        if model_dict['ds'] in generative_datasets:
             model_dict['metric'] = 'rouge'        
             # Read and extract the score
             file_path = os.path.join(parent_dir+subdir, test_file_selected)
