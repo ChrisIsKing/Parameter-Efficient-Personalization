@@ -286,7 +286,7 @@ if __name__ == '__main__':
 
             tm = Timer()
             model = None
-            tokenizer = train_util.load_tokenizer()
+            tokenizer = train_util.load_tokenizer(model_name_or_path)
             if zeroshot:  # Load global model for all users
                 load_args = dict(peft_method=None, verbose=True, logger_fl=logger_fl)
                 model = load_model(model_name_or_path=model_name_or_path, is_generative=is_generative, **load_args)
