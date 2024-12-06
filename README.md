@@ -31,7 +31,7 @@ Two separate environments are needed since [`adapter-transformers`](https://gith
 Add current directory for python to look for our local package:
     
 ```bash
-export PYTHONPATH=$PATHONPATH:`pwd`
+export PYTHONPATH=$PYTHONPATH:`pwd`
 ```
 
 All scripts are intended to be run from the root directory. 

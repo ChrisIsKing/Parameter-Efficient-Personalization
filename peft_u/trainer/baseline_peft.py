@@ -14,7 +14,9 @@ from transformers import (
     AutoModelForCausalLM,
     LlamaForSequenceClassification,
     LlamaForCausalLM,
-    LlamaConfig
+    LlamaConfig,
+    AutoConfig,
+    AutoModelForSequenceClassification
 )
 from peft import get_peft_model, PeftConfig, PeftModel, PeftModelForSeq2SeqLM
 from peft import TaskType, LoraConfig,  PrefixTuningConfig, PromptEncoderConfig, PromptTuningConfig
@@ -50,16 +52,25 @@ def load_model(
     log = model_util.LoadModelLogging(logger=logger, logger_fl=logger_fl, verbose=verbose)
     cache_dir = log.get_n_log_cache_dir(model_name_or_path=model_name_or_path)
 
-    if 'llama' in model_name_or_path.lower():
-        config = LlamaConfig.from_pretrained(model_name_or_path)
-        if not is_generative:
-            config.num_labels = 2
-            model = LlamaForSequenceClassification.from_pretrained(model_name_or_path, config=config, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
-        else:
-            model = LlamaForCausalLM.from_pretrained(model_name_or_path, config=config, cache_dir=cache_dir, torch_dtype=torch.bfloat16)
-        return model
+    if 't5' in model_name_or_path.lower():
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
     else:
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)#, torch_dtype=torch.bfloat16) #TODO fp16)
+        if not is_generative:
+            config = AutoConfig.from_pretrained(model_name_or_path)
+            config.num_labels = 2
+            model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path, config=config, cache_dir=cache_dir, torch_dtype=torch.bfloat16)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16)
+
+    # if 'llama' in model_name_or_path.lower():
+    #     config = LlamaConfig.from_pretrained(model_name_or_path)
+    #     if not is_generative:
+    #         config.num_labels = 2
+    #         model = LlamaForSequenceClassification.from_pretrained(model_name_or_path, config=config, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
+    #     else:
+    #         model = LlamaForCausalLM.from_pretrained(model_name_or_path, config=config, cache_dir=cache_dir, torch_dtype=torch.bfloat16)
+    # else:
+    #     model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
 
     if peft_method is not None:
         ca.check_mismatch('PEFT method', peft_method, PEFT_METHODS)
