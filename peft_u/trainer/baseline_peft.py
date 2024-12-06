@@ -57,8 +57,9 @@ def load_model(
             model = LlamaForSequenceClassification.from_pretrained(model_name_or_path, config=config, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
         else:
             model = LlamaForCausalLM.from_pretrained(model_name_or_path, config=config, cache_dir=cache_dir, torch_dtype=torch.bfloat16)
+        return model
     else:
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)#, torch_dtype=torch.bfloat16) #TODO fp16)
 
     if peft_method is not None:
         ca.check_mismatch('PEFT method', peft_method, PEFT_METHODS)
@@ -126,9 +127,9 @@ def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple
         # model.resize_token_embeddings(len(tokenizer))
         tokenizer.padding_side = "left"
     else:
-        model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
-        model = PeftModel.from_pretrained(model, model_name_or_path)
-        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
+        model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir)#, torch_dtype=torch.bfloat16) #TODO fp16)
+    model = PeftModel.from_pretrained(model, model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
 
     if torch.cuda.is_available():
         model = model.cuda()
@@ -206,7 +207,10 @@ if __name__ == '__main__':
             if global_tqdm:
                 it = tqdm(it, desc=f'Training on {pl.i(dataset_name)}')
 
-            tokenizer = train_util.load_tokenizer()
+            tokenizer = train_util.load_tokenizer(model_name_or_path)
+            if 'llama' in model_name_or_path.lower():
+                tokenizer.pad_token_id = tokenizer.eos_token_id
+                tokenizer.padding_side = "left"
             trainer = train_util.MyTrainer(
                 tokenizer=tokenizer,
                 seed=seed, batch_size=args.batch_size, num_epochs=args.num_epochs,
@@ -228,8 +232,8 @@ if __name__ == '__main__':
                     logger.info(f'Skipping User {pl.i(uid)} due to empty split w/ {pl.i(split_sizes)}...')
                     continue
 
-                model = load_model(model_name_or_path=model_name_or_path, peft_method=method, logger_fl=logger_fl)
-                model = model.to(torch.bfloat16)
+                model = load_model(model_name_or_path=model_name_or_path, peft_method=method, logger_fl=logger_fl, is_generative=is_generative)
+                # model = model.to(torch.bfloat16)
                 model.config.pad_token_id = tokenizer.pad_token_id
 
                 trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False, is_generative=is_generative)
@@ -271,7 +275,7 @@ if __name__ == '__main__':
 
             tm = Timer()
             model = None
-            tokenizer = train_util.load_tokenizer(model_name_or_path)
+            tokenizer = train_util.load_tokenizer()
             if zeroshot:  # Load global model for all users
                 load_args = dict(peft_method=None, verbose=True, logger_fl=logger_fl)
                 model = load_model(model_name_or_path=model_name_or_path, is_generative=is_generative, **load_args)

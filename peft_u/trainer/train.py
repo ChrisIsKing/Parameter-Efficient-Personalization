@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from transformers import PreTrainedTokenizer, AutoTokenizer, PreTrainedModel
+from transformers import PreTrainedTokenizer, AutoTokenizer, PreTrainedModel, pipeline
 from transformers import Trainer, TrainingArguments, TrainerCallback, get_linear_schedule_with_warmup
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -24,6 +24,7 @@ import peft_u.util.models as model_util
 
 from torch.cuda.amp import autocast #TODO fp16
 from rouge_score import rouge_scorer
+import bert_score
 
 if is_on_adapter():
     from transformers import AdapterTrainer
@@ -197,17 +198,24 @@ class MyTrainer:
             it = tqdm(enumerate(train_dataloader, start=1), desc=tr_desc, total=n_step_per_epoch)
             for step, batch in it:
                 if torch.cuda.is_available():
-                    batch = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in batch.items()}
-                with autocast(dtype=torch.bfloat16): 
+                    batch = {k: v.cuda() for k, v in batch.items()}
+                    # batch = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in batch.items()}
+                # with autocast(dtype=torch.bfloat16): 
+                    # print('type(model).__name__==s',type(model).__name__)
+                    # if type(model).__name__ == 'LlamaForCausalLM':
+                    #     self.tokenizer.padding_side = "right"
+                    #     pipe = pipeline(task="text-generation", model=model, tokenizer=self.tokenizer, max_length=256)
+                    #     result = pipe(f"<s>[INST] {**batch} [/INST]")
+                    #     logits = result[0]['generated_text']
+                    # else:
                     outputs = model(**batch)
-
-                logits = outputs.logits
-                logits = logits.view(-1, logits.size(-1))
+                    logits = outputs.logits
+                    logits = logits.view(-1, logits.size(-1))
                 if is_generative:
                     loss = torch.nn.CrossEntropyLoss()(logits, torch.flatten(batch['labels']))
                 else:
-                    loss = torch.nn.CrossEntropyLoss()(logits.mean(dim=1), torch.flatten(batch['labels']))
-                    # loss = outputs.loss
+                    # loss = torch.nn.CrossEntropyLoss()(logits.mean(dim=1), torch.flatten(batch['labels']))
+                    loss = outputs.loss
 
                 loss_item = loss.detach().item()
                 total_tr_loss += loss_item
@@ -232,7 +240,8 @@ class MyTrainer:
             eval_epoch_loss = None
             for step, batch in it:
                 if torch.cuda.is_available():
-                    batch = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in batch.items()}
+                    batch = {k: v.cuda() for k, v in batch.items()}
+                    # batch = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in batch.items()}
                 with torch.no_grad():
                     # with autocast(dtype=torch.bfloat16):
                     outputs = model(**batch)
@@ -595,7 +604,8 @@ class MyTester:
         if not is_generative:
             get_pred = GetPredId(label_options=label_options, logger_fl=self.logger_fl)
         else:
-            scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+            lst_bert = []
+            # scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
 
         for i_ba, inputs in enumerate(it):
             inputs = {k: v for k, v in inputs.items()}
@@ -624,8 +634,10 @@ class MyTester:
                     lst_inputs_decoded = self.tokenizer.batch_decode(inputs_out, skip_special_tokens=True)
                     lst_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
                 else:
-                    outputs = model(inputs)
+                    # outputs = model(inputs)
+                    outputs = model.generate(**inputs, max_new_tokens=128)  # Greedy decoding
                     lst_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+
             if not is_generative:
                 for i, decoded in enumerate(lst_decoded):
                     i_sample = i_ba * self.batch_size + i
@@ -637,21 +649,26 @@ class MyTester:
                         df_out_path=os_join(self.eval_output_path, f'{uid2u_str(user_id)}.csv')
                     )
             else:
-                rouges = ['rouge1','rouge2','rougeL']
-                metrics = ['precision','recall','fmeasure']
-                for i, decoded in enumerate(lst_decoded):
-                    i_sample = i_ba * self.batch_size + i
-                    print('Prompt:\n',lst_inputs_decoded[i])
-                    print('Actual:\n',dataset[i_sample].label[0])
-                    print('Generated:\n',decoded)
-                    rouge_scores = scorer.score(dataset[i_sample].label[0], decoded)
-                    rouge_dict = {rouge:{metric:[] for metric in metrics} for rouge in rouges}
-                    for rouge_idx, rouge in enumerate(rouges):
-                        for metric_idx, metric in enumerate(metrics):
-                            rouge_dict[rouge][metrics[metric_idx]].append(list(rouge_scores.values())[rouge_idx][metric_idx])
-                            if i+1 == len(lst_decoded): # last iter
-                                rouge_dict[rouge][metrics[metric_idx]] = np.mean(rouge_dict[rouge][metrics[metric_idx]])
-                ret = rouge_dict
+                # rouges = ['rouge1','rouge2','rougeL']
+                # metrics = ['precision','recall','fmeasure']
+                # for i, decoded in enumerate(lst_decoded):
+                    # i_sample = i_ba * self.batch_size + i
+                #     print('Prompt:\n',lst_inputs_decoded[i])
+                #     print('Actual:\n',dataset[i_sample].label[0])
+                #     print('Generated:\n',decoded)
+                    # rouge_scores = scorer.score(dataset[i_sample].label[0], decoded)
+                #     rouge_dict = {rouge:{metric:[] for metric in metrics} for rouge in rouges}
+                #     for rouge_idx, rouge in enumerate(rouges):
+                #         for metric_idx, metric in enumerate(metrics):
+                #             rouge_dict[rouge][metrics[metric_idx]].append(list(rouge_scores.values())[rouge_idx][metric_idx])
+                #             if i+1 == len(lst_decoded): # last iter
+                #                 rouge_dict[rouge][metrics[metric_idx]] = np.mean(rouge_dict[rouge][metrics[metric_idx]])                    
+                scores = bert_score.score(lst_decoded, [dataset[i_sample].label[0] for i_sample in range(len(lst_decoded))], lang="en")
+                lst_bert.append(scores)
+                    # preds[i_sample], trues[i_sample] = decoded, dataset[i_sample].label[0]
+                if i_ba + 1 == n_ba:  # last iteration
+                    ret = lst_bert
+                # ret = bert_score.score(lst_decoded, [dataset[i].label[0] for i in range(len(dataset))], lang="en")
         return ret
 
 
@@ -668,24 +685,37 @@ def log_n_save_test_results(
             json.dump(d_accs, f, indent=4)
     else:
         if len(d_accs.values()) > 0:
-            rouges = ['rouge1','rouge2','rougeL']
-            metrics = ['precision','recall','fmeasure']
-            rouge_avg = {}
-            for rouge in rouges:
-                rouge_avg[rouge] = {}
-                for metric in metrics:
-                    rouge_avg[rouge][metric] = f'{np.mean([score[rouge][metric] for score in list(d_accs.values())]) * 100:.1f}'
+            # rouges = ['rouge1','rouge2','rougeL']
+            # metrics = ['precision','recall','fmeasure']
+            # rouge_avg = {}
+            # for rouge in rouges:
+            #     rouge_avg[rouge] = {}
+            #     for metric in metrics:
+            #         rouge_avg[rouge][metric] = f'{np.mean([score[rouge][metric] for score in list(d_accs.values())]) * 100:.1f}'
+            metrics = ['precision','recall','f1']
+            bert_avg = {}
+            all_tuples = [tup for tuples_list in d_accs.values() for tup in tuples_list]
+            flattened = [torch.cat([t for t in tup], dim=0) for tup in zip(*all_tuples)]
+            for idx, metric in enumerate(metrics):
+                bert_avg[metric] = f'{flattened[idx].mean().item() * 100:.1f}'
         else:
-            rouge_avg = None
-        logger.info(f'Dataset {pl.i(dataset_name)} macro-avg rouge:\n{pl.i(rouge_avg)}')
-        logger_fl.info(f'Dataset {dataset_name} macro-avg rouge:\n{rouge_avg}')
+            # rouge_avg = None
+            bert_avg = None
+        # logger.info(f'Dataset {pl.i(dataset_name)} macro-avg rouge:\n{pl.i(rouge_avg)}')
+        # logger_fl.info(f'Dataset {dataset_name} macro-avg rouge:\n{rouge_avg}')
+        logger.info(f'Dataset {pl.i(dataset_name)} macro-avg bert:\n{pl.i(bert_avg)}')
+        logger_fl.info(f'Dataset {dataset_name} macro-avg bert:\n{bert_avg}')
 
-        d_with_rouge_keys = {
-            uid: rouges
-            for uid, rouges in d_accs.items()
+        # d_with_rouge_keys = {
+        #     uid: rouges
+        #     for uid, rouges in d_accs.items()
+        # }
+        d_with_bert_keys = {
+            uid: [tuple(tensor.tolist() for tensor in tup) for tup in metric]
+            for uid, metric in d_accs.items()
         }
-        with open(os_join(eval_output_path, 'rouge.json'), 'w') as f:
-            json.dump(d_with_rouge_keys, f, indent=4)
+        with open(os_join(eval_output_path, 'bert.json'), 'w') as f:
+            json.dump(d_with_bert_keys, f, indent=4)
 
 
 if __name__ == '__main__':
