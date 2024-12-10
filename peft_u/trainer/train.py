@@ -677,7 +677,7 @@ class MyTester:
 
 def log_n_save_test_results(
         d_accs: Dict[str, float] = None, dataset_name: str = None, logger_fl: Logger = None,
-        eval_output_path: str = None, is_generative: bool = False
+        eval_output_path: str = None, is_generative: bool = False, max_example_count: int = None
 ):
     if not is_generative:
         acc_avg = np.mean(list(d_accs.values()))
