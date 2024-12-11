@@ -201,24 +201,39 @@ class MyTrainer:
             it = tqdm(enumerate(train_dataloader, start=1), desc=tr_desc, total=n_step_per_epoch)
             for step, batch in it:
                 if torch.cuda.is_available():
-                    batch = {k: v.cuda() for k, v in batch.items()}
-                    # batch = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in batch.items()}
-                # with autocast(dtype=torch.bfloat16): 
-                    # print('type(model).__name__==s',type(model).__name__)
-                    # if type(model).__name__ == 'LlamaForCausalLM':
-                    #     self.tokenizer.padding_side = "right"
-                    #     pipe = pipeline(task="text-generation", model=model, tokenizer=self.tokenizer, max_length=256)
-                    #     result = pipe(f"<s>[INST] {**batch} [/INST]")
-                    #     logits = result[0]['generated_text']
-                    # else:
-                    outputs = model(**batch)
-                    logits = outputs.logits
-                    logits = logits.view(-1, logits.size(-1))
-                if is_generative:
-                    loss = torch.nn.CrossEntropyLoss()(logits, torch.flatten(batch['labels']))
-                else:
-                    # loss = torch.nn.CrossEntropyLoss()(logits.mean(dim=1), torch.flatten(batch['labels']))
-                    loss = outputs.loss
+                    # batch = {k: v.cuda() for k, v in batch.items()}
+                    batch = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in batch.items()}
+                with autocast(dtype=torch.bfloat16):
+                    if 'llama' in type(model.base_model.model).__name__.lower():
+                        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+                        outputs = model(**batch)
+                        # outputs = model.generate(**batch,
+                        #                             max_new_tokens=256,
+                        #                             pad_token_id=self.tokenizer.pad_token_id,
+                        #                             eos_token_id=self.tokenizer.eos_token_id,
+                        #                             # attention_mask=inputs['attention_mask'],
+                        #                             no_repeat_ngram_size=3,
+                        #                             # temperature=0.7,  # Lower temperature for less randomness
+                        #                             top_k=50,         # Limit to top 50 tokens by probability
+                        #                             top_p=0.9,        # Nucleus sampling, focus on top 90% cumulative probability
+                        #                             repetition_penalty=1.2)  # Penalize repeated tokens)
+                        # logits = outputs[0]
+                        # inputs_out = outputs[:, :inputs["input_ids"].shape[1]]
+                        # outputs = outputs[:, inputs["input_ids"].shape[1]:]
+                        # lst_inputs_decoded = self.tokenizer.batch_decode(inputs_out, skip_special_tokens=True)
+                        # lst_decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+                    else:
+                        outputs = model(**batch)
+                        logits = outputs.logits
+                        logits = logits.view(-1, logits.size(-1))
+                # if is_generative:
+                #     # print('abc123')
+                #     # print(type(logits[0]))
+                #     # print(type(torch.flatten(batch['labels'])[0]))
+                #     loss = torch.nn.CrossEntropyLoss()(logits.float(), torch.flatten(batch['labels']))
+                # else:
+                #     # loss = torch.nn.CrossEntropyLoss()(logits.mean(dim=1), torch.flatten(batch['labels']))
+                loss = outputs.loss
 
                 loss_item = loss.detach().item()
                 total_tr_loss += loss_item
@@ -243,11 +258,13 @@ class MyTrainer:
             eval_epoch_loss = None
             for step, batch in it:
                 if torch.cuda.is_available():
-                    batch = {k: v.cuda() for k, v in batch.items()}
-                    # batch = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in batch.items()}
+                    # batch = {k: v.cuda() for k, v in batch.items()}
+                    batch = {k: v.cuda().to(torch.bfloat16) if v.dtype not in [torch.int64, torch.int32] else v.cuda() for k, v in batch.items()}
                 with torch.no_grad():
-                    # with autocast(dtype=torch.bfloat16):
-                    outputs = model(**batch)
+                    with autocast(dtype=torch.bfloat16):
+                        if 'llama' in type(model.base_model.model).__name__.lower():
+                            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id                            
+                        outputs = model(**batch)
                 cum_eval_loss += outputs.loss.detach().item()
 
                 decoded = self.tokenizer.batch_decode(
@@ -463,7 +480,7 @@ def setup_train_output_path_n_loggers(args: Namespace, approach: str = None) -> 
     max_example_count = args.max_example_count
     use_rag = args.use_rag
 
-    get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key=approach, use_user_profile=use_user_profile, max_example_count=max_example_count, use_rag=use_rag)
+    get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key=approach, use_user_profile=use_user_profile, max_example_count=max_example_count)
     output_path = model_util.get_train_output_path(**get_args, dataset_name=dataset_name)
     d_log = dict(
         model_name_or_path=model_name_or_path, method=method,
@@ -617,12 +634,12 @@ class MyTester:
             if torch.cuda.is_available():
                 inputs = {k: v.cuda() for k, v in inputs.items()}
             with torch.no_grad():
-                if type(model).__name__ == 'LlamaForSequenceClassification':
+                if type(model.base_model.model).__name__ == 'LlamaForSequenceClassification':
                     outputs = model(inputs['input_ids'])#, max_new_tokens=128)  # Greedy decoding
                     logits = outputs.logits  # Shape: (batch_size, num_labels)
                     predicted_labels = logits.argmax(dim=-1)
                     lst_decoded = [label_options[label.item()] for label in predicted_labels]
-                elif type(model).__name__ == 'LlamaForCausalLM':
+                elif type(model.base_model.model).__name__ == 'LlamaForCausalLM':
                     self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
                     outputs = model.generate(inputs['input_ids'],
                                                 max_new_tokens=256,
