@@ -83,7 +83,8 @@ def load_model(
         config_d: Dict[str, Any] = dict(task_type=(TaskType.CAUSAL_LM if 'llama' in model_name_or_path.lower() else TaskType.SEQ_2_SEQ_LM), inference_mode=False)
         _same_param_exp = False
         if peft_method == 'lora':
-            peft_config = LoraConfig(**config_d, r=1 if _same_param_exp else 8, lora_alpha=32, lora_dropout=0.1)
+            peft_config = LoraConfig(r=64, lora_alpha=128, lora_dropout=0.0, target_modules=["embed_tokens", "lm_head", "q_proj", "v_proj"])
+            # peft_config = LoraConfig(**config_d, r=1 if _same_param_exp else 8, lora_alpha=32, lora_dropout=0.1)
         else:
             _encoder_insertion_only = True  # for prompting in encoder input only
             config_d['num_virtual_tokens'] = 20
@@ -126,7 +127,7 @@ def load_model(
     return model
 
 
-def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple[PeftModel, PreTrainedTokenizer]:
+def load_trained(model_name_or_path: str = None, verbose: bool = False, is_generative: bool = False) -> Tuple[PeftModel, PreTrainedTokenizer]:
     cache_dir = model_util.get_hf_model_cache_dir()
     if verbose:
         logger.info(f'Loading model {pl.i(model_name_or_path)} with cache dir {pl.i(cache_dir)}... ')
@@ -134,8 +135,11 @@ def load_trained(model_name_or_path: str = None, verbose: bool = False) -> Tuple
     config = PeftConfig.from_pretrained(model_name_or_path)
 
     if 'llama' in model_name_or_path.lower():
-        model = LlamaForSequenceClassification.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
-        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
+        if not is_generative:
+            model = LlamaForSequenceClassification.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
+        else:
+            model = LlamaForCausalLM.from_pretrained(config.base_model_name_or_path, cache_dir=cache_dir, torch_dtype=torch.bfloat16) #TODO fp16)
+        tokenizer = AutoTokenizer.from_pretrained(config.base_model_name_or_path)
         # model.resize_token_embeddings(len(tokenizer))
         tokenizer.padding_side = "left"
     else:
@@ -246,7 +250,7 @@ if __name__ == '__main__':
                     continue
 
                 model = load_model(model_name_or_path=model_name_or_path, peft_method=method, logger_fl=logger_fl, is_generative=is_generative)
-                # model = model.to(torch.bfloat16)
+                model = model.to(torch.bfloat16)
                 model.config.pad_token_id = tokenizer.pad_token_id
 
                 trainer(model=model, dataset=dset[uid], user_id=uid, save_per_epoch=False, is_generative=is_generative)
@@ -264,7 +268,7 @@ if __name__ == '__main__':
             bsz = args.batch_size
             seed = args.seed
             use_user_profile = args.use_user_profile
-            zeroshot = args.zeroshot,
+            zeroshot = args.zeroshot
             max_example_count = args.max_example_count
             is_generative = sconfig(f'datasets.{dataset_name}.is_generative')
             leakage = leakage if not is_generative else False # force no leakage for generative
@@ -289,7 +293,10 @@ if __name__ == '__main__':
 
             tm = Timer()
             model = None
-            tokenizer = train_util.load_tokenizer(model_name_or_path)
+            if zeroshot:
+                tokenizer = train_util.load_tokenizer(model_name_or_path)
+            else:
+                tokenizer = train_util.load_tokenizer()
             if zeroshot:  # Load global model for all users
                 load_args = dict(peft_method=None, verbose=True, logger_fl=logger_fl)
                 model = load_model(model_name_or_path=model_name_or_path, is_generative=is_generative, **load_args)
@@ -330,13 +337,13 @@ if __name__ == '__main__':
                     
                 if not zeroshot:  # load trained model for each user
                     # assert os.path.exists(path)  # sanity check
-                    model, tokenizer = load_trained(model_name_or_path=path)
+                    model, tokenizer = load_trained(model_name_or_path=path, is_generative=is_generative)
 
                 accs[uid] = tester(model=model, dataset=ts, user_id=uid, user_idx=i)
                 if not zeroshot:
                     model.cpu()  # move to CPU then collect memory, otherwise CUDA OOM error
                     gc.collect()
-            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path, is_generative=is_generative, max_example_count=max_example_count)
+            out_args = dict(d_accs=accs, logger_fl=logger_fl, eval_output_path=eval_output_path, is_generative=is_generative)#, max_example_count=max_example_count)
             train_util.log_n_save_test_results(dataset_name=dataset_name, **out_args)
 
             t_e = tm.end()
