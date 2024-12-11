@@ -634,12 +634,12 @@ class MyTester:
             if torch.cuda.is_available():
                 inputs = {k: v.cuda() for k, v in inputs.items()}
             with torch.no_grad():
-                if type(model.base_model.model).__name__ == 'LlamaForSequenceClassification':
+                if model.config.architectures[0] == 'LlamaForSequenceClassification':
                     outputs = model(inputs['input_ids'])#, max_new_tokens=128)  # Greedy decoding
                     logits = outputs.logits  # Shape: (batch_size, num_labels)
                     predicted_labels = logits.argmax(dim=-1)
                     lst_decoded = [label_options[label.item()] for label in predicted_labels]
-                elif type(model.base_model.model).__name__ == 'LlamaForCausalLM':
+                elif model.config.architectures[0] == 'LlamaForCausalLM':
                     self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
                     outputs = model.generate(inputs['input_ids'],
                                                 max_new_tokens=256,
