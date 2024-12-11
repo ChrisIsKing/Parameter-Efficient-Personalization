@@ -77,3 +77,4 @@ wheel==0.38.4
 xxhash==3.2.0
 yarl==1.9.2
 rouge_score==0.1.2
+rank_bm25==0.2.2

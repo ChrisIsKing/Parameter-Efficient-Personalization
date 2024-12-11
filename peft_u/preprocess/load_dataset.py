@@ -5,6 +5,7 @@ from os.path import join as os_join
 from typing import List, Dict, Union, Any, Callable
 from dataclasses import dataclass
 import csv
+import rank_bm25
 
 from torch.utils.data import Dataset
 
@@ -105,7 +106,7 @@ def _load_user_profiles(dataset_name: str = None) -> Dict:
 
 def load_dataset_with_prompts(
         dataset_name: str, leakage: bool = False,
-        example_count: int = 1, max_example_count: int = 3, per_user: bool = True, seed: int = 42, use_user_profile: bool = False
+        max_example_count: int = 3, per_user: bool = True, seed: int = 42, use_user_profile: bool = False, use_rag: bool = False
 ) -> Union[InputEgDataset, Dict[str, InputEgDataset]]:
     """
     Process data for few-shot learning
@@ -113,10 +114,11 @@ def load_dataset_with_prompts(
     :param dataset_name: dataset name (e.g. goemotion)
         Will load a dataset of (user id => dataset split => sample id => sample data)
     :param leakage: See
-    :param example_count: number of examples in few-shot prompt, per category
     :param max_example_count: maximum number of examples to use per category
     :param per_user: If True, return datasets for each user
     :param seed: random seed for sampling prompt examples
+    :param use_user_profile: If True, use user profile as part of the prompt
+    :param use_rag: If True, use RAG for examples else random examples
     """
     ret = dict()
     
@@ -141,6 +143,8 @@ def load_dataset_with_prompts(
             for label in label_options
         }
 
+        gen_txts = [(sample[text_col],sample[label_col]) for id_, sample in dset_['train'].items()] if is_generative else []
+
         def get_split(split: str) -> List[InputExample]:
             """
             Add prompt example to each sample in the split
@@ -151,17 +155,28 @@ def load_dataset_with_prompts(
             for sid, sample in dset_[split].items():
                 text, label = sample[text_col], sample[label_col]
 
-                # take n random examples from each category for few-shot prompt
-                prompt_egs = []
-                for lb in label_options:
-                    if split == 'train' and label == lb:  # filter out current sample if in train split
-                        idx_curr_sample = lb2txts[lb].index(text)
-                        txts = lb2txts[lb][:idx_curr_sample] + lb2txts[lb][idx_curr_sample+1:]
+                if is_generative:
+                    txts = [txt for txt, lbl in gen_txts if txt != text]
+                    if use_rag:
+                        tokenized_txts = [txt.split(" ") for txt in txts]
+                        bm25 = rank_bm25.BM25Okapi(tokenized_txts)
+                        tokenized_query = text.split(" ")
+                        txts_selected = bm25.get_top_n(tokenized_query, txts, n=min(max_example_count, len(txts)))
                     else:
-                        txts = lb2txts[lb]
-                    txts_selected = random.sample(txts, k=min(example_count, len(txts)))
-                    prompt_egs += [(txt, lb) for txt in txts_selected]
-                prompt_egs = prompt_egs[:max_example_count]  # keep only first `max_example_count` examples
+                        txts_selected = random.sample(txts, k=min(max_example_count, len(txts)))
+                    prompt_egs = [(txt, lbl[0]) for txt, lbl in gen_txts if txt in txts_selected]
+                else:
+                    # take n random examples from each category for few-shot prompt
+                    prompt_egs = []
+                    for lb in label_options:
+                        if split == 'train' and label == lb:  # filter out current sample if in train split
+                            idx_curr_sample = lb2txts[lb].index(text)
+                            txts = lb2txts[lb][:idx_curr_sample] + lb2txts[lb][idx_curr_sample+1:]
+                        else:
+                            txts = lb2txts[lb]
+                        txts_selected = random.sample(txts, k=min(max_example_count, len(txts)))
+                        prompt_egs += [(txt, lb) for txt in txts_selected]
+                    prompt_egs = prompt_egs[:max_example_count]  # keep only first `max_example_count` examples
                 lst.append(
                     InputExample(guid=sid, instruction=instruction, text=text, prompt_examples=prompt_egs, label=label, user_profile=user_profiles[uid] if user_profiles else None)
                 )

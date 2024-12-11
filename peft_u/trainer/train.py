@@ -93,6 +93,7 @@ def get_arg_parser(default_method: str = None, method_choices: List[str] = None,
     train_parser.add_argument("--output_dir", type=str, required=False, default=None)
     train_parser.add_argument("--use_user_profile", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
     train_parser.add_argument("--max_example_count", type=int, required=False, default=3)
+    train_parser.add_argument("--use_rag", type=bool, required=False, default=False)
     # train_parser.add_argument("--is_generative", type=lambda x: (str(x).lower() == 'true'), required=False, default=False)
     # Run on `cuda` if available, always personalize
     return ArgParser(parser=parser, train_parser=train_parser, test_parser=_add_args(test_parser))
@@ -460,8 +461,9 @@ def setup_train_output_path_n_loggers(args: Namespace, approach: str = None) -> 
     output_dir = args.output_dir
     use_user_profile = args.use_user_profile
     max_example_count = args.max_example_count
+    use_rag = args.use_rag
 
-    get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key=approach, use_user_profile=use_user_profile, max_example_count=max_example_count)
+    get_args = dict(model_name=model_name_or_path, name=output_dir, method=method, method_key=approach, use_user_profile=use_user_profile, max_example_count=max_example_count, use_rag=use_rag)
     output_path = model_util.get_train_output_path(**get_args, dataset_name=dataset_name)
     d_log = dict(
         model_name_or_path=model_name_or_path, method=method,
